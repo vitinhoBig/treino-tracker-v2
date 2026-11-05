@@ -53,7 +53,8 @@ erDiagram
 | Data | Owner | `workouts` | `workouts_and_body` | `everything` |
 |---|---|---|---|---|
 | `profiles` (name, avatar, units) | yes | yes | yes | yes |
-| `workouts`, `workout_sets`, `personal_records` (completed only) | yes | yes | yes | yes |
+| `workouts`, `personal_records` (completed only) | yes | yes | yes | yes |
+| Sets, through `get_shared_sets` (completed only) | yes | yes, body weight masked | yes | yes |
 | `feed_events` | yes | if event scope is `workouts` | up to `workouts_and_body` | yes |
 | `body_metrics` | yes | no | yes | yes |
 | `daily_wellness`, `meals`, `meal_items`, `nutrition_targets`, `weekly_reviews`, `supplement_logs`, `experiments` | yes | no | no | yes |
@@ -61,6 +62,19 @@ erDiagram
 
 The last row stays owner-only on purpose, even for `everything`. Birth date is identifying, and a
 weekly schedule tells someone where you will be and when.
+
+### Body weight on sets
+
+A bodyweight set's load is the person's body weight, which the `workouts` tier must not reveal. RLS can't hide
+a column, so viewers have no direct access to `workout_sets` and read through `get_shared_sets(owner, workout,
+from, to)` instead. Without body access, any set on a bodyweight exercise or with a body weight snapshot
+comes back with `bodyweight_kg`, `effective_load_kg`, `volume_kg`, `e1rm_kg`, `entered_load` and `entered_unit` set
+to null, and `body_masked` true. Reps and added load stay visible.
+
+Direct access can't be kept alongside the function: a viewer could filter with `bodyweight_kg=gt.70` and narrow down
+the value without ever being shown it. The typed load is hidden too because it can be the body weight itself, as
+v1's pull-ups were. Personal records and feed payloads are also readable at this tier, so they're built only from
+added load and reps on these sets. Run `scripts/check_masking_breaks.sh` to confirm the tests catch a broken mask.
 
 ## Types
 
@@ -807,9 +821,7 @@ create policy workout_sets_owner on public.workout_sets for all to authenticated
   with check (user_id = (select auth.uid()) and exists (
     select 1 from public.exercises e
     where e.id = exercise_id and (e.owner_id is null or e.owner_id = (select auth.uid()))));
-create policy workout_sets_viewer on public.workout_sets for select to authenticated
-  using (public.can_view(user_id, 'workouts') and exists (
-    select 1 from public.workouts w where w.id = workout_id and w.status = 'completed'));
+-- No viewer policy: viewers read sets through get_shared_sets, which masks body weight.
 
 -- Personal records: read-only for clients. Written by finish_workout.
 create policy personal_records_select on public.personal_records for select to authenticated
@@ -924,8 +936,8 @@ Records are always rebuilt from sets, so one algorithm handles finishing, retrie
 - **Baseline:** the first log of an exercise is never a PR, and a session compares only with earlier sessions.
 - **One per type:** a session records at most one PR of each type per exercise, on its best set.
 - **Minimum gain:** a gain under 0.1 kg doesn't count, so 100 kg logged later as 220.5 lb isn't a PR.
-- **Bodyweight lifts:** these compare added load and reps only, and have no e1RM records. Otherwise gaining body
-  weight would turn the same pull-ups into a PR.
+- **Bodyweight lifts:** any set on a bodyweight exercise or with a body weight snapshot compares added load and reps
+  only, and has no e1RM record. Otherwise gaining body weight would turn the same pull-ups into a PR.
 
 | Type | Meaning |
 |---|---|
@@ -984,12 +996,6 @@ The script:
 - Runs PR backfill without writing any feed events, so importing history does not notify anyone. The public
   functions need a signed-in user and this script has none, so it will need its own server-only path to `rebuild_prs`.
 - Finishes by checking each week's sets and volume against the CSV and printing any differences.
-
-## Known gap: body weight at the `workouts` scope
-
-A viewer with `workouts` access can read `bodyweight_kg` and `effective_load_kg` on `workout_sets`, which reveals body
-weight that this tier is supposed to hide. Feed payloads are protected, but the table isn't, because RLS can't hide a
-column from one viewer and show it to the owner. This must be resolved before viewers can read `workout_sets` in the app.
 
 ## Validation status
 

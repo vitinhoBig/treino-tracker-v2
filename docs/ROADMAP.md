@@ -58,6 +58,7 @@ roughly one conventional commit or a small series of them, and each module gets 
 - [ ] Invite link, accept and revoke
 - [ ] "Trained today" feed event with best-lift selection
 - [ ] Viewer feed screen
+- [ ] Read other people's sets only through `get_shared_sets`, and show masked values as hidden
 
 **v1 import**
 

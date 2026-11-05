@@ -75,8 +75,11 @@ your pandas and scikit-learn experience transfers directly.
 RLS is the one place that decides who can see what, and FastAPI forwards the user's own JWT when reading data.
 If the API had its own permission checks, there would be two systems that could disagree, and one forgotten
 `if` would leak health data. With this design, a bug in the API still cannot return rows that the user's token
-is not allowed to read. It also means a coach's request for a client's progress needs no special code, because
-RLS has already filtered the rows.
+is not allowed to read.
+
+Sets are the one exception to plain RLS, because a viewer may see a row but not all of its columns. Viewers read them
+through the `get_shared_sets` database function, which masks body weight unless they have body access. The rule still
+lives in the database, so analytics for a coach reads through that function and needs no permission logic of its own.
 
 ### The secret key has a very small job
 
@@ -191,7 +194,8 @@ frame = pd.DataFrame(rows.data)
 return weekly_volume_by_muscle(frame)  # A pure function, tested without a database.
 ```
 
-Reading through PostgREST is slower than a direct SQL connection, but one user's history is small, and it keeps RLS in
+A user reading their own data uses the table directly, and a viewer goes through `get_shared_sets`, whose masked rows
+have nulls that analytics must handle. Reading through PostgREST is slower than a direct SQL connection, but one user's history is small, and it keeps RLS in
 force without extra work. If it ever becomes a bottleneck, the fix is a database view or function, and no change to
 the authorization model is needed.
 

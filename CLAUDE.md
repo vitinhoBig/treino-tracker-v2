@@ -82,6 +82,7 @@ npm --prefix apps/mobile start                       # Press w for web, or scan 
 # Test
 uv --directory services/api run pytest               # Analytics, nutrition, API
 npx supabase test db                                 # RLS and database functions
+bash scripts/check_masking_breaks.sh                 # Breaks each masking rule to prove the tests notice (resets the local DB)
 npm --prefix apps/mobile test                        # Client
 
 # Lint and types
@@ -102,6 +103,8 @@ npx supabase db reset                                # Rebuild locally from migr
 - Every new table enables RLS and gets policies in the same migration, plus pgTAP tests for each sharing tier.
 - RLS hides rows, not columns. Data with a different sensitivity goes in its own table.
 - Clients never write `personal_records` or `feed_events`.
+- Viewers read sets only through `get_shared_sets`. Never give them direct access to `workout_sets`, because they could
+  filter on hidden columns. Anything readable at the `workouts` scope must exclude body weight and values derived from it.
 - `SECURITY DEFINER` functions set `search_path = ''`, qualify every name and revoke `EXECUTE` from `public` and `anon`.
 - The Supabase secret key stays in `app/db/admin.py` and the import script. Secrets never get an `EXPO_PUBLIC_` prefix.
 - Never commit `.env` or anything in `data/`.

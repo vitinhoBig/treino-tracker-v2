@@ -191,6 +191,7 @@ the review says so rather than guessing. A review with no nutrition data leaves 
 - "Best lift" is chosen by **improvement against the user's own history**, not absolute load, so squats do
   not always win. See `DATA_MODEL.md` for the tiers. The word "PR" is used only for a real all-time PR.
 - Even with "everything", viewers do not see birth date, weekly schedule or food photos.
+- Without body access, viewers see reps and added load on bodyweight lifts, but nothing that reveals body weight.
 
 ## Importing v1 data
 
