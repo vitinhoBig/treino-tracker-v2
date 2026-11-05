@@ -1,0 +1,105 @@
+-- Shared test data. Each test file includes this with `\ir helpers/fixtures.psql`. The .psql extension
+-- stops the test runner from treating it as a test, and everything rolls back with the test's transaction.
+--
+-- Personas: owner shares with one viewer at each tier, and stranger has no connection to anyone.
+
+create schema tests;
+grant usage on schema tests to anon, authenticated;
+
+create function tests.uid(p_name text) returns uuid language sql immutable as $$
+  select (case p_name
+    when 'owner'    then 'a0000000-0000-4000-8000-000000000001'
+    when 'viewer_w' then 'a0000000-0000-4000-8000-000000000002'
+    when 'viewer_b' then 'a0000000-0000-4000-8000-000000000003'
+    when 'viewer_e' then 'a0000000-0000-4000-8000-000000000004'
+    when 'stranger' then 'a0000000-0000-4000-8000-000000000005'
+  end)::uuid;
+$$;
+
+-- Switch identity the same way PostgREST does: a role plus JWT claims.
+create function tests.as_user(p_name text) returns void language plpgsql as $$
+begin
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', tests.uid(p_name), 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+end $$;
+
+create function tests.as_anon() returns void language plpgsql as $$
+begin
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('role', 'anon', true);
+end $$;
+
+create function tests.as_admin() returns void language plpgsql as $$
+begin
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims', '', true);
+end $$;
+
+-- Switch to a persona by name, including anon.
+create function tests.become(p_persona text) returns void language plpgsql as $$
+begin
+  if p_persona = 'anon' then perform tests.as_anon(); else perform tests.as_user(p_persona); end if;
+end $$;
+
+grant execute on all functions in schema tests to anon, authenticated;
+
+insert into auth.users (id, email, raw_user_meta_data)
+select tests.uid(n), n || '@example.test', json_build_object('display_name', n)::jsonb
+from unnest(array['owner', 'viewer_w', 'viewer_b', 'viewer_e', 'stranger']) as n;
+
+insert into public.shares (owner_id, viewer_id, scope, status) values
+  (tests.uid('owner'), tests.uid('viewer_w'), 'workouts', 'active'),
+  (tests.uid('owner'), tests.uid('viewer_b'), 'workouts_and_body', 'active'),
+  (tests.uid('owner'), tests.uid('viewer_e'), 'everything', 'active');
+
+-- One row of the owner's data in every table, plus an in-progress workout.
+insert into public.profile_details (user_id, birth_date, height_cm, experience_level, goal, target_sessions_per_week)
+  values (tests.uid('owner'), '2003-01-01', 178, 'intermediate', 'build_muscle', 3);
+insert into public.sports (id, name) values ('test_soccer', 'Soccer');
+insert into public.user_sports values (tests.uid('owner'), 'test_soccer');
+insert into public.schedule_preferences (user_id, mode, sessions_per_week) values (tests.uid('owner'), 'flexible', 3);
+insert into public.availability_slots (user_id, weekday, start_time, end_time) values (tests.uid('owner'), 2, '18:00', '19:00');
+insert into public.planned_sessions (user_id, planned_date, label) values (tests.uid('owner'), '2026-11-03', 'Push');
+
+insert into public.muscle_groups (id, name) values ('test_chest', 'Chest');
+insert into public.exercises (id, slug, name) values ('e0000000-0000-4000-8000-000000000001', 'test_squat', 'Test squat');
+insert into public.exercises (id, owner_id, name) values ('e0000000-0000-4000-8000-000000000002', tests.uid('owner'), 'Owner custom lift');
+insert into public.exercise_muscles (exercise_id, muscle_group_id) values ('e0000000-0000-4000-8000-000000000002', 'test_chest');
+
+insert into public.workouts (id, user_id, local_date, started_at, status) values
+  ('b0000000-0000-4000-8000-000000000001', tests.uid('owner'), '2026-11-01', now(), 'completed'),
+  ('b0000000-0000-4000-8000-000000000002', tests.uid('owner'), '2026-11-02', now(), 'in_progress');
+insert into public.workout_sets (id, workout_id, user_id, exercise_id, exercise_order, set_number, reps, load_kg) values
+  ('c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', tests.uid('owner'), 'e0000000-0000-4000-8000-000000000002', 0, 1, 10, 100),
+  ('c0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000002', tests.uid('owner'), 'e0000000-0000-4000-8000-000000000002', 0, 1, 5, 120);
+insert into public.personal_records (user_id, exercise_id, set_id, workout_id, type, value, local_date)
+  values (tests.uid('owner'), 'e0000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'e1rm', 133.333, '2026-11-01');
+
+insert into public.body_metrics (user_id, measured_on, weight_kg) values (tests.uid('owner'), '2026-11-01', 72.5);
+insert into public.daily_wellness (user_id, local_date, sleep_hours) values (tests.uid('owner'), '2026-11-01', 8);
+insert into public.v1_weekly_aggregates (user_id, week, total_sets) values (tests.uid('owner'), 1, 52);
+
+insert into public.foods (source, source_id, name, kcal_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g)
+  values ('usda', 'test-1', 'Test rice', 130, 2.7, 28, 0.3);
+insert into public.foods (source, owner_id, name, kcal_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g)
+  values ('custom', tests.uid('owner'), 'Owner custom food', 100, 1, 1, 1);
+insert into public.meals (id, user_id, local_date, eaten_at, meal_type)
+  values ('d0000000-0000-4000-8000-000000000001', tests.uid('owner'), '2026-11-01', now(), 'lunch');
+insert into public.meal_items (id, meal_id, user_id, food_name, grams, kcal, protein_g, carbs_g, fat_g, entry_method)
+  values ('d1000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', tests.uid('owner'), 'Rice', 100, 130, 2.7, 28, 0.3, 'search');
+insert into public.nutrition_targets (user_id, effective_from, kcal, protein_g, carbs_g, fat_g) values (tests.uid('owner'), '2026-11-01', 2500, 150, 300, 70);
+insert into public.weekly_reviews (user_id, week_start, payload) values (tests.uid('owner'), '2026-10-26', '{}');
+
+insert into public.supplements (id, owner_id, name) values ('f0000000-0000-4000-8000-000000000001', tests.uid('owner'), 'Owner custom supplement');
+insert into public.supplement_logs (user_id, supplement_id, taken_on, dose) values (tests.uid('owner'), 'f0000000-0000-4000-8000-000000000001', '2026-11-01', 5);
+insert into public.experiments (user_id, supplement_id, dose, baseline_start, baseline_end, start_date, metrics)
+  values (tests.uid('owner'), 'f0000000-0000-4000-8000-000000000001', 5, '2026-09-01', '2026-09-30', '2026-10-01', array['volume']);
+
+insert into public.feed_events (actor_id, type, workout_id, required_scope, payload, local_date) values
+  (tests.uid('owner'), 'trained_today', 'b0000000-0000-4000-8000-000000000001', 'workouts', '{}', '2026-11-01'),
+  (tests.uid('owner'), 'trained_today', null, 'workouts_and_body', '{}', '2026-11-01'),
+  (tests.uid('owner'), 'trained_today', null, 'everything', '{}', '2026-11-01');
+
+insert into storage.objects (bucket_id, name) values ('food-photos', tests.uid('owner')::text || '/meal.jpg');
