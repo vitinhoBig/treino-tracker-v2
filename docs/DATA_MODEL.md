@@ -662,7 +662,7 @@ begin
      and owner_id <> auth.uid()
   returning id into v_id;
   if v_id is null then
-    raise exception 'invalid or expired invite' using errcode = 'P0002';
+    raise exception 'invalid or expired invite' using errcode = 'PT404';
   end if;
   return v_id;
 end $$;
@@ -675,7 +675,7 @@ begin
   update public.shares set scope = p_scope
    where id = p_share_id and owner_id = auth.uid() and status in ('pending', 'active');
   if not found then
-    raise exception 'share not found' using errcode = 'P0002';
+    raise exception 'share not found' using errcode = 'PT404';
   end if;
 end $$;
 
@@ -691,7 +691,7 @@ begin
      and (owner_id = auth.uid() or viewer_id = auth.uid())
      and status <> 'revoked';
   if not found then
-    raise exception 'share not found' using errcode = 'P0002';
+    raise exception 'share not found' using errcode = 'PT404';
   end if;
 end $$;
 
@@ -903,34 +903,63 @@ create policy food_photos_owner on storage.objects for all to authenticated
 
 ## `finish_workout`: PRs and the feed event
 
-`finish_workout(p_workout_id uuid)` is the MVP's main database function. It is designed here and written
-in the MVP migration. It runs as `SECURITY DEFINER`, must confirm the caller owns the workout, and is
-idempotent, so a retry after a dropped connection cannot duplicate anything. In one transaction it:
+Written in `20261105013000_pr_detection.sql`, `..._best_lift.sql` and `..._finish_workout.sql`, and tested in
+`supabase/tests/`. Client-facing functions live in `public`; everything else is in a `private` schema that
+PostgREST doesn't expose and API roles can't reach.
 
-1. Marks the workout `completed` and sets `ended_at`.
-2. Compares each exercise's working sets with that user's **earlier** sets by `local_date`, and writes
-   `personal_records` rows. The first time an exercise is logged sets the baseline and is not a PR.
-3. Chooses the best lift using the tiers below and writes one `feed_events` row, but only when the user
-   has at least one active share.
+- **`finish_workout(workout_id)`** marks the workout completed, rebuilds records for each of its exercises and
+  publishes the feed event, all in one transaction. It returns the best lift and confirmed records for the
+  summary screen. Retrying is safe, and it keeps the first finish time.
+- **`recompute_prs(exercise_id)`** rebuilds one exercise's records for the caller. The client calls it after editing
+  or deleting a finished set, including each affected exercise after deleting a workout. It also refreshes existing
+  feed events, so a fixed typo stops claiming a PR, but it never publishes anything new.
 
-**Choosing the best lift.** Candidates are compared within a tier by percentage gain, which is what
-stops squats from always winning. The first tier with a candidate wins.
+Both take a per-user lock, because rebuilding deletes and re-inserts rows. Missing or not-yours gives the same `404`.
 
-| Tier | Condition | Example wording |
-|---|---|---|
-| 1 | All-time e1RM PR | `Squats 230 lb × 10 (+5 lb PR)` |
-| 2 | Rep PR: more reps than ever at this load or higher | `Squats 230 lb × 11 (rep PR)` |
-| 3 | Beats the best of the last 8 weeks | `Squats 230 lb × 10 (+5 lb vs recent best)` |
-| 4 | Otherwise, the set closest to the all-time best e1RM | `Squats 230 lb × 10 (94% of best)` |
+### What counts as a record
 
-The `+N lb` shows the load increase when the reps match the previous best, and the e1RM gain otherwise.
+Records are always rebuilt from sets, so one algorithm handles finishing, retries, backdated logs and edits.
 
-Tier 3 exists because of real v1 data: squats went from 260 lb in week 1 to 230 lb in week 16, so
-calling a return to 230 lb a "PR" would be false. The word "PR" appears only in tier 1.
+- **Counted sets:** completed workouts only, no warm-ups, at least one rep. History is ordered by date, then start time.
+- **Baseline:** the first log of an exercise is never a PR, and a session compares only with earlier sessions.
+- **One per type:** a session records at most one PR of each type per exercise, on its best set.
+- **Minimum gain:** a gain under 0.1 kg doesn't count, so 100 kg logged later as 220.5 lb isn't a PR.
+- **Bodyweight lifts:** these compare added load and reps only, and have no e1RM records. Otherwise gaining body
+  weight would turn the same pull-ups into a PR.
 
-**After editing history.** Changing or deleting a finished set can invalidate later records, so
-`recompute_prs(exercise_id)` rebuilds that exercise's rows from its sets. Deleting a workout cascades to
-its records and feed event, then recomputes.
+| Type | Meaning |
+|---|---|
+| `e1rm` | Highest estimated 1RM |
+| `load` | Heaviest load at any rep count |
+| `reps_at_load` | More reps than ever at this load or higher. With no earlier set that heavy, it's a `load` PR instead |
+
+### Choosing the best lift
+
+Candidates are compared within a tier by percentage gain, which is what stops squats from always winning. The first
+tier with a candidate wins.
+
+| Tier | `tier` value | Condition | Example wording |
+|---|---|---|---|
+| 1 | `pr` | All-time e1RM PR, or added-load PR on a bodyweight lift | `Squats 230 lb × 10 (+5 lb PR)` |
+| 2 | `rep_pr` | Rep PR | `Squats 230 lb × 11 (rep PR)` |
+| 3 | `recent_best` | Beats the best e1RM of the last 8 weeks (56 days) | `Squats 230 lb × 10 (+5 lb vs recent best)` |
+| 4 | `near_best` | Otherwise, the set closest to its all-time best e1RM | `Squats 230 lb × 10 (94% of best)` |
+
+With no candidate at all, such as a first-ever log, `best_lift` is `null` and the line is just "trained today".
+`delta_basis` tells the client how to word the gain: `load` when reps match the previous best (`+5 lb`), `e1rm` when
+they don't, and `reps` for a rep PR.
+
+Tier 3 exists because of real v1 data: squats went from 260 lb in week 1 to 230 lb in week 16, so calling a return to
+230 lb a "PR" would be false. The word "PR" appears only in tier 1.
+
+### When the feed publishes
+
+An event is written only when all of these hold: the user has an active share, the workout came from the app, it's
+dated today (one day either side, for timezones), and it has counted sets or is a sport session. Backdated, imported
+and empty workouts announce nothing.
+
+The payload is stored as data rather than a sentence, so each viewer's app can word it in their language and units.
+It's readable at the `workouts` scope, so bodyweight lifts carry only added load and reps.
 
 ## Importing v1 data
 
@@ -952,12 +981,19 @@ The script:
 - Uses the secret key, targets an explicit `--user-id`, and supports `--dry-run`.
 - Is idempotent through `source = 'v1_import'` and `source_ref`, such as `week06-tuesday`.
 - Stores one weekly `body_metrics` row on the week's Wednesday where weight exists.
-- Runs PR backfill without writing any feed events, so importing history does not notify anyone.
+- Runs PR backfill without writing any feed events, so importing history does not notify anyone. The public
+  functions need a signed-in user and this script has none, so it will need its own server-only path to `rebuild_prs`.
 - Finishes by checking each week's sets and volume against the CSV and printing any differences.
+
+## Known gap: body weight at the `workouts` scope
+
+A viewer with `workouts` access can read `bodyweight_kg` and `effective_load_kg` on `workout_sets`, which reveals body
+weight that this tier is supposed to hide. Feed payloads are protected, but the table isn't, because RLS can't hide a
+column from one viewer and show it to the owner. This must be resolved before viewers can read `workout_sets` in the app.
 
 ## Validation status
 
-The migrations in `supabase/migrations/` are generated from the `sql` blocks above, with two changes for
-Supabase: `pg_trgm` is installed in the `extensions` schema, and the first migration also drops the
-scaffold `hello()`. They run on the local Supabase stack (PostgreSQL 17), and `supabase/tests/` covers them
-with pgTAP. `finish_workout` and `recompute_prs` are designed but not written yet.
+The migrations in `supabase/migrations/` started as the `sql` blocks above, with two changes for Supabase: `pg_trgm` is
+installed in the `extensions` schema, and the first migration also drops the scaffold `hello()`. Later migrations hold
+functions and fixes, so treat the migrations as the source of truth for exact SQL. They run on the local Supabase stack
+(PostgreSQL 17), and `supabase/tests/` covers them with pgTAP.

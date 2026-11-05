@@ -42,7 +42,7 @@ roughly one conventional commit or a small series of them, and each module gets 
 - [ ] Rest timer
 - [ ] Unilateral, warm-up and bodyweight handling
 - [ ] Local draft that survives no signal and an app restart
-- [ ] `finish_workout` with PR detection and pgTAP tests
+- [x] `finish_workout` with PR detection and pgTAP tests
 - [ ] Live PR preview, tested against the shared e1RM fixture
 - [ ] Editing and deleting past workouts, with PR recompute
 

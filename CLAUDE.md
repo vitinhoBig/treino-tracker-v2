@@ -125,6 +125,8 @@ npx supabase db reset                                # Rebuild locally from migr
 - Missing data is `null`, never `0`. Averages and verdicts must handle sparse weeks.
 - e1RM and volume are defined in generated columns. Read them rather than recomputing.
 - The word "PR" means an all-time record against the user's own history. The first log of an exercise is a baseline.
+- Client-facing database errors use `PT404`-style codes. PostgREST reports most other codes as HTTP 500, and pgTAP can't
+  see that, so also check new functions over HTTP.
 
 ## Testing expectations
 
