@@ -1,0 +1,9 @@
+{
+  "name": "treino-tracker-v2",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Repo-level tooling. The Supabase CLI is pinned here so everyone runs the same version.",
+  "devDependencies": {
+    "supabase": "3.0.0"
+  }
+}
