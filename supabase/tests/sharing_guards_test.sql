@@ -9,7 +9,7 @@ insert into public.shares (owner_id, scope, invite_token_hash, invite_expires_at
 values (tests.uid('owner'), 'workouts', encode(sha256(convert_to('expired-token', 'UTF8')), 'hex'), now() - interval '1 day');
 
 select tests.as_user('stranger');
-select throws_ok($$select public.accept_share('expired-token')$$, 'P0002', null, 'an expired invite is rejected');
+select throws_ok($$select public.accept_share('expired-token')$$, 'PT404', null, 'an expired invite is rejected');
 
 select tests.as_anon();
 select throws_ok($$select public.create_share_invite('workouts')$$, '42501', null, 'anon cannot create invites');

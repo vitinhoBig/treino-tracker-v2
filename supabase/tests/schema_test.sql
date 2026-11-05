@@ -1,6 +1,6 @@
 -- Schema-wide rules. These cover future tables automatically, so a new table can't quietly skip RLS.
 begin;
-select plan(9);
+select plan(10);
 
 select is_empty(
   $$select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -64,6 +64,13 @@ select ok(
   not has_schema_privilege('authenticated', 'private', 'usage')
     and not has_schema_privilege('anon', 'private', 'usage'),
   'API roles cannot reach the private schema');
+
+-- PostgREST turns most error codes into HTTP 500. PT404 is a real 404, and anything meant for
+-- clients should use a PT code or a standard class that PostgREST maps, such as 28000.
+select is_empty(
+  $$select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prokind = 'f' and p.prosrc like '%P0002%'$$,
+  'no API function raises an error that reaches clients as HTTP 500');
 
 select * from finish();
 rollback;

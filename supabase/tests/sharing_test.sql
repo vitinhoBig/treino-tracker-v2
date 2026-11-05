@@ -30,10 +30,10 @@ select tests.as_user('owner');
 select is((select count(*)::int from public.workouts where user_id = tests.uid('stranger')), 0, 'a pending invite gives no access');
 select is((select count(*)::int from public.profiles where id = tests.uid('stranger')), 0, 'a pending invite does not reveal names');
 
-select throws_ok(format('select public.accept_share(%L)', 'not-a-real-token'), 'P0002', null, 'a bad token is rejected');
+select throws_ok(format('select public.accept_share(%L)', 'not-a-real-token'), 'PT404', null, 'a bad token is rejected');
 
 select tests.as_user('stranger');
-select throws_ok(format('select public.accept_share(%L)', (select value from tests.vars where key = 'token')), 'P0002', null, 'owners cannot accept their own invite');
+select throws_ok(format('select public.accept_share(%L)', (select value from tests.vars where key = 'token')), 'PT404', null, 'owners cannot accept their own invite');
 
 -- Accepting creates the link, so the stranger's data becomes visible at that scope.
 select tests.as_admin();
@@ -45,7 +45,7 @@ insert into tests.vars select 'share', public.accept_share((select value from te
 select is((select count(*)::int from public.workouts where user_id = tests.uid('stranger')), 1, 'accepting grants workouts');
 select is((select count(*)::int from public.body_metrics where user_id = tests.uid('stranger')), 0, 'the scope is respected');
 select is((select count(*)::int from public.profiles where id = tests.uid('stranger')), 1, 'viewer sees the sharer''s name');
-select throws_ok(format('select public.accept_share(%L)', (select value from tests.vars where key = 'token')), 'P0002', null, 'a token works only once');
+select throws_ok(format('select public.accept_share(%L)', (select value from tests.vars where key = 'token')), 'PT404', null, 'a token works only once');
 
 -- A second invite between the same pair can't create a duplicate active share.
 select throws_ok(format('select public.accept_share(%L)', (select value from tests.vars where key = 'token_everything')), '23505', null, 'one active share per pair');
@@ -55,11 +55,11 @@ select is((select count(*)::int from public.profiles where id = tests.uid('owner
 
 -- Viewers can't widen their own access.
 select tests.as_user('owner');
-select throws_ok(format($$select public.update_share_scope(%L, 'everything')$$, (select value from tests.vars where key = 'share')), 'P0002', null, 'viewers cannot raise their own scope');
+select throws_ok(format($$select public.update_share_scope(%L, 'everything')$$, (select value from tests.vars where key = 'share')), 'PT404', null, 'viewers cannot raise their own scope');
 
 select tests.as_user('viewer_e');
-select throws_ok(format($$select public.update_share_scope(%L, 'everything')$$, (select value from tests.vars where key = 'share')), 'P0002', null, 'outsiders cannot change a share');
-select throws_ok(format('select public.revoke_share(%L)', (select value from tests.vars where key = 'share')), 'P0002', null, 'outsiders cannot revoke a share');
+select throws_ok(format($$select public.update_share_scope(%L, 'everything')$$, (select value from tests.vars where key = 'share')), 'PT404', null, 'outsiders cannot change a share');
+select throws_ok(format('select public.revoke_share(%L)', (select value from tests.vars where key = 'share')), 'PT404', null, 'outsiders cannot revoke a share');
 
 -- Scope changes apply on the very next query.
 select tests.as_user('stranger');
@@ -70,7 +70,7 @@ select is((select count(*)::int from public.body_metrics where user_id = tests.u
 -- Revoking cuts off everything at once, and a revoked share can't be revived.
 select tests.as_user('stranger');
 select lives_ok(format('select public.revoke_share(%L)', (select value from tests.vars where key = 'share')), 'sharer can revoke');
-select throws_ok(format($$select public.update_share_scope(%L, 'everything')$$, (select value from tests.vars where key = 'share')), 'P0002', null, 'a revoked share cannot be changed');
+select throws_ok(format($$select public.update_share_scope(%L, 'everything')$$, (select value from tests.vars where key = 'share')), 'PT404', null, 'a revoked share cannot be changed');
 select tests.as_user('owner');
 select is((select count(*)::int from public.workouts where user_id = tests.uid('stranger')), 0, 'revoking removes data immediately');
 select is((select count(*)::int from public.profiles where id = tests.uid('stranger')), 0, 'revoking removes the name too');

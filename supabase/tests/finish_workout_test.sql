@@ -21,10 +21,10 @@ select throws_ok(format('select public.finish_workout(%L)', (select id from w)),
 select throws_ok(format('select public.recompute_prs(%L)', (select squat from ex)), '42501', null, 'anon cannot recompute records');
 
 select tests.as_user('viewer_e');
-select throws_ok(format('select public.finish_workout(%L)', (select id from w)), 'P0002', null, 'a viewer cannot finish the owner''s workout');
+select throws_ok(format('select public.finish_workout(%L)', (select id from w)), 'PT404', null, 'a viewer cannot finish the owner''s workout');
 select tests.as_user('stranger');
-select throws_ok(format('select public.finish_workout(%L)', (select id from w)), 'P0002', null, 'a stranger cannot finish it');
-select throws_ok($$select public.finish_workout('00000000-0000-4000-8000-000000000000')$$, 'P0002', null, 'a missing workout gives the same error');
+select throws_ok(format('select public.finish_workout(%L)', (select id from w)), 'PT404', null, 'a stranger cannot finish it');
+select throws_ok($$select public.finish_workout('00000000-0000-4000-8000-000000000000')$$, 'PT404', null, 'a missing workout gives the same error');
 select tests.as_admin();
 select is((select status::text from public.workouts where id = (select id from w)), 'in_progress', 'failed attempts changed nothing');
 

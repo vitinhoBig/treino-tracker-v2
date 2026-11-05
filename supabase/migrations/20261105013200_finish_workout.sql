@@ -90,7 +90,7 @@ begin
   where w.id = p_workout_id and w.user_id = v_user
   returning w.* into v_workout;
   if not found then
-    raise exception 'workout not found' using errcode = 'P0002';
+    raise exception 'workout not found' using errcode = 'PT404';
   end if;
 
   select coalesce(array_agg(distinct s.exercise_id), '{}') into v_exercises
