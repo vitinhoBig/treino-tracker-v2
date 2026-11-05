@@ -137,6 +137,7 @@ create table public.user_sports (
   sport_id  text not null references public.sports (id),
   primary key (user_id, sport_id)
 );
+create index user_sports_sport_idx on public.user_sports (sport_id);
 
 create table public.schedule_preferences (
   user_id            uuid primary key references public.profiles (id) on delete cascade,
@@ -210,6 +211,11 @@ all read one definition:
 `user_id` is repeated on `workout_sets` so RLS and per-user queries avoid a join. The composite
 foreign key guarantees it can never disagree with the parent workout.
 
+Foreign keys to a user's own custom rows are `deferrable initially deferred`. Deleting an account
+cascades through several tables, and an immediate check fails if `exercises` is reached before the
+`workout_sets` that use it. Deferring moves the check to commit, when those sets are gone. Deleting one
+custom exercise that is still in use is still rejected, because the sets remain at commit.
+
 ```sql
 create table public.planned_sessions (
   id                uuid primary key default gen_random_uuid(),
@@ -222,6 +228,8 @@ create table public.planned_sessions (
   created_at        timestamptz not null default now()
 );
 create index planned_sessions_user_date_idx on public.planned_sessions (user_id, planned_date);
+create index planned_sessions_rescheduled_idx on public.planned_sessions (rescheduled_from)
+  where rescheduled_from is not null;
 
 create table public.workouts (
   id                  uuid primary key,  -- client-generated
@@ -245,6 +253,7 @@ create table public.workouts (
   check ((type = 'sport') = (sport_id is not null))
 );
 create index workouts_user_date_idx on public.workouts (user_id, local_date desc);
+create index workouts_sport_idx on public.workouts (sport_id) where sport_id is not null;
 create index workouts_planned_idx on public.workouts (planned_session_id)
   where planned_session_id is not null;
 create unique index workouts_source_ref_uq on public.workouts (user_id, source, source_ref)
@@ -254,7 +263,7 @@ create table public.workout_sets (
   id              uuid primary key,  -- client-generated
   workout_id      uuid not null,
   user_id         uuid not null,
-  exercise_id     uuid not null references public.exercises (id),
+  exercise_id     uuid not null references public.exercises (id) deferrable initially deferred,
   exercise_order  smallint not null check (exercise_order >= 0),
   set_number      smallint not null check (set_number >= 1),
   set_type        public.set_type not null default 'working',
@@ -294,7 +303,7 @@ create index workout_sets_exercise_idx on public.workout_sets (exercise_id);
 create table public.personal_records (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null references public.profiles (id) on delete cascade,
-  exercise_id     uuid not null references public.exercises (id),
+  exercise_id     uuid not null references public.exercises (id) deferrable initially deferred,
   set_id          uuid not null references public.workout_sets (id) on delete cascade,
   workout_id      uuid not null references public.workouts (id) on delete cascade,
   type            public.pr_type not null,
@@ -477,7 +486,7 @@ create index supplement_logs_supplement_idx on public.supplement_logs (supplemen
 create table public.experiments (
   id                  uuid primary key default gen_random_uuid(),
   user_id             uuid not null references public.profiles (id) on delete cascade,
-  supplement_id       uuid not null references public.supplements (id),
+  supplement_id       uuid not null references public.supplements (id) deferrable initially deferred,
   dose                numeric(7, 2) not null check (dose > 0),
   dose_unit           text not null default 'g',
   baseline_start      date not null,
@@ -487,7 +496,7 @@ create table public.experiments (
   metrics             text[] not null
     check (metrics <@ array['anchor_e1rm', 'volume', 'body_weight']
            and cardinality(metrics) > 0),
-  anchor_exercise_id  uuid references public.exercises (id),
+  anchor_exercise_id  uuid references public.exercises (id) deferrable initially deferred,
   status              public.experiment_status not null default 'planned',
   result              jsonb,
   created_at          timestamptz not null default now(),
@@ -710,6 +719,11 @@ than once per row, which matters on tables the size of `workout_sets`.
 The common shape is one policy giving the owner full access, plus a second read-only policy for
 viewers. Permissive policies combine with OR.
 
+Foreign key checks ignore RLS, so a policy has to stop users from referencing rows that aren't theirs.
+Viewers can legitimately read the IDs of the owner's custom exercises. Without the extra `with check`
+on `workout_sets`, `supplement_logs` and `experiments`, a viewer could point their own rows at those
+IDs and permanently block the owner from deleting that exercise or their account.
+
 ```sql
 -- Enable RLS everywhere.
 alter table public.profiles enable row level security;
@@ -789,7 +803,10 @@ create policy workouts_viewer on public.workouts for select to authenticated
   using (status = 'completed' and public.can_view(user_id, 'workouts'));
 
 create policy workout_sets_owner on public.workout_sets for all to authenticated
-  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()) and exists (
+    select 1 from public.exercises e
+    where e.id = exercise_id and (e.owner_id is null or e.owner_id = (select auth.uid()))));
 create policy workout_sets_viewer on public.workout_sets for select to authenticated
   using (public.can_view(user_id, 'workouts') and exists (
     select 1 from public.workouts w where w.id = workout_id and w.status = 'completed'));
@@ -820,11 +837,20 @@ create policy meal_items_viewer on public.meal_items for select to authenticated
   using (public.can_view(user_id, 'everything'));
 
 create policy supplement_logs_owner on public.supplement_logs for all to authenticated
-  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()) and exists (
+    select 1 from public.supplements s
+    where s.id = supplement_id and (s.owner_id is null or s.owner_id = (select auth.uid()))));
 create policy supplement_logs_viewer on public.supplement_logs for select to authenticated
   using (public.can_view(user_id, 'everything'));
 create policy experiments_owner on public.experiments for all to authenticated
-  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid())
+    and exists (select 1 from public.supplements s
+                where s.id = supplement_id and (s.owner_id is null or s.owner_id = (select auth.uid())))
+    and (anchor_exercise_id is null or exists (
+      select 1 from public.exercises e
+      where e.id = anchor_exercise_id and (e.owner_id is null or e.owner_id = (select auth.uid())))));
 create policy experiments_viewer on public.experiments for select to authenticated
   using (public.can_view(user_id, 'everything'));
 
@@ -931,11 +957,7 @@ The script:
 
 ## Validation status
 
-The SQL above was run in Phase 0 against a throwaway PostgreSQL 18 cluster, with stubs for Supabase's
-`auth` and `storage` schemas and its default grants. All 63 checks passed, covering the sharing tiers,
-revocation, forged writes, anonymous access, invite tokens, account-deletion cascades and the generated
-columns. Deliberately weakening the policies made the matching checks fail, so the checks do detect leaks.
-
-Still unproven: it has not run on Supabase itself, whose PostgreSQL version may differ, and the storage
-policy ran only against a stub. `finish_workout` and `recompute_prs` are designed but not written. The MVP
-adds all of this to the repo as pgTAP tests.
+The migrations in `supabase/migrations/` are generated from the `sql` blocks above, with two changes for
+Supabase: `pg_trgm` is installed in the `extensions` schema, and the first migration also drops the
+scaffold `hello()`. They run on the local Supabase stack (PostgreSQL 17), and `supabase/tests/` covers them
+with pgTAP. `finish_workout` and `recompute_prs` are designed but not written yet.
