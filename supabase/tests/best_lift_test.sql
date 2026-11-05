@@ -3,7 +3,7 @@ begin;
 \ir helpers/fixtures.psql
 \ir helpers/training.psql
 
-select plan(26);
+select plan(28);
 
 create function tests.best(p_workout uuid) returns jsonb language sql as $$
   select private.best_lift(p_workout);
@@ -91,7 +91,12 @@ select tests.lift(w9.id, row_ex, 10, 50) from ex, w9;
 select tests.rebuild('owner', row_ex) from ex;
 select is(tests.best(w9.id), null, 'a first-ever log has no best lift') from w9;
 
--- Body weight stays out of a payload that `workouts` viewers can read.
+-- Body weight stays out of a payload that `workouts` viewers can read. Searching for the number alone
+-- would miss derived values like e1RM, so the allowed keys and every numeric value are pinned.
+create function tests.payload_numbers(p jsonb) returns numeric[] language sql as $$
+  select array_agg((value #>> '{}')::numeric order by key) from jsonb_each(p)
+  where jsonb_typeof(value) = 'number';
+$$;
 select tests.lift(tests.workout('owner', '2026-01-01'), pullup, 10, 0, 'working', 72.5) from ex;
 create temp table w10 as select tests.workout('owner', '2026-01-08') as id;
 select tests.lift(w10.id, pullup, 12, 0, 'working', 72.5) from ex, w10;
@@ -99,6 +104,11 @@ select tests.rebuild('owner', pullup) from ex;
 select is((tests.best(w10.id)) ->> 'tier', 'rep_pr', 'a bodyweight rep PR is tier 2') from w10;
 select is(((tests.best(w10.id)) ->> 'load_kg')::numeric, 0::numeric, 'a bodyweight payload reports added load only') from w10;
 select ok((tests.best(w10.id))::text !~ '72\.5', 'the body weight appears nowhere in the payload') from w10;
+select is(
+  (select array_agg(k order by k) from jsonb_object_keys(tests.best(w10.id)) k),
+  '{delta,delta_basis,entered_load,entered_unit,exercise_id,exercise_name,exercise_slug,gain_pct,is_bodyweight,is_per_side,load_kg,pct_of_best,reps,set_id,tier}',
+  'the payload has only the allowed fields') from w10;
+select is(tests.payload_numbers(tests.best(w10.id)), '{2,20.0,0.000,12}', 'its numbers are only extra reps, gain, added load and reps') from w10;
 
 create temp table w11 as select tests.workout('owner', '2026-01-15') as id;
 select tests.lift(w11.id, pullup, 5, 5, 'working', 80) from ex, w11;
