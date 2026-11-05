@@ -209,7 +209,9 @@ the authorization model is needed.
 | `ANTHROPIC_API_KEY` | API | **Yes** |
 | `ANTHROPIC_MODEL` | API | No |
 
-Real values go in `.env`, which is gitignored. `.env.example` documents the names only.
+Real values go in `apps/mobile/.env` and `services/api/.env`, which are gitignored. Each folder has an `.env.example`
+documenting the names. Keeping them separate means server secrets never sit in the folder that gets bundled into the
+app, and Expo only reads `.env` from its own project folder anyway.
 
 ## Testing strategy
 

@@ -16,7 +16,7 @@ roughly one conventional commit or a small series of them, and each module gets 
 
 **Foundations**
 
-- [ ] Monorepo scaffold: `apps/mobile`, `services/api`, `supabase/`, `.gitignore`, `.env.example`
+- [x] Monorepo scaffold: `apps/mobile`, `services/api`, `supabase/`, `.gitignore`, `.env.example`
 - [ ] Local Supabase running, with the schema as migrations
 - [ ] RLS test suite in pgTAP, ported from the Phase 0 checks
 - [ ] CI: lint and tests for client, API and database on every push

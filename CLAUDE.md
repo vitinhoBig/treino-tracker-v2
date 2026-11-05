@@ -3,8 +3,8 @@
 Cross-platform fitness app for strength training, sports and nutrition. It grows out of a Python CLI that tracked 16
 weeks of real training.
 
-**Current state: Phase 0, planning only. No application code exists yet.** The commands below describe the intended
-setup and start working once the MVP scaffold lands. See [docs/ROADMAP.md](docs/ROADMAP.md) for what is done.
+**Current state: MVP, scaffold only.** Each part runs a hello-world, and no product features exist yet. Folders in the
+map below that are not on disk yet arrive with their features. See [docs/ROADMAP.md](docs/ROADMAP.md) for what is done.
 
 ## Read before changing things
 
@@ -40,7 +40,9 @@ mobile.
 ## Folder map
 
 ```text
-apps/mobile/            Expo app
+apps/mobile/
+  src/app/              Routes. Every file here becomes a page, so tests must not go here
+  src/__tests__/        Client tests
 services/api/
   app/routers/          HTTP only
   app/services/         Orchestration
@@ -60,19 +62,22 @@ docs/
 
 ## Commands
 
-Available after the MVP scaffold. Local Supabase needs Docker running. `python3` on this machine is 3.9, so always go
+Run these from the repo root. Local Supabase needs Docker running. `python3` on this machine is 3.9, so always go
 through `uv`, which uses the pinned 3.12.
 
 ```bash
 # First-time setup
+npm install                                          # Pinned Supabase CLI
 npm --prefix apps/mobile install
 uv --directory services/api sync
-cp .env.example .env
+cp apps/mobile/.env.example apps/mobile/.env         # Public values only
+cp services/api/.env.example services/api/.env       # Server secrets
 
 # Run
 npx supabase start                                   # Local database, auth and storage
+npx supabase stop                                    # Free its containers when finished
 uv --directory services/api run fastapi dev app/main.py
-npm --prefix apps/mobile start
+npm --prefix apps/mobile start                       # Press w for web, or scan the QR code
 
 # Test
 uv --directory services/api run pytest               # Analytics, nutrition, API
