@@ -1,6 +1,6 @@
 -- Schema-wide rules. These cover future tables automatically, so a new table can't quietly skip RLS.
 begin;
-select plan(8);
+select plan(9);
 
 select is_empty(
   $$select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -59,6 +59,11 @@ select is_empty(
       )$$,
   'every foreign key has a supporting index'
 );
+
+select ok(
+  not has_schema_privilege('authenticated', 'private', 'usage')
+    and not has_schema_privilege('anon', 'private', 'usage'),
+  'API roles cannot reach the private schema');
 
 select * from finish();
 rollback;

@@ -1,0 +1,41 @@
+-- Helpers for logging training data in tests. Include after fixtures.psql.
+
+create function tests.exercise(p_slug text, p_load_type public.load_type default 'external') returns uuid
+language sql as $$
+  insert into public.exercises (slug, name, load_type) values (p_slug, initcap(p_slug), p_load_type) returning id;
+$$;
+
+create function tests.workout(p_user text, p_date date, p_status public.workout_status default 'completed', p_hour int default 12)
+returns uuid language sql as $$
+  insert into public.workouts (id, user_id, local_date, started_at, status)
+  values (gen_random_uuid(), tests.uid(p_user), p_date, p_date + make_interval(hours => p_hour), p_status)
+  returning id;
+$$;
+
+create function tests.lift(
+  p_workout uuid, p_exercise uuid, p_reps int, p_load numeric,
+  p_type public.set_type default 'working', p_bodyweight numeric default null,
+  p_entered numeric default null, p_unit public.load_unit default null
+) returns uuid language sql as $$
+  insert into public.workout_sets (id, workout_id, user_id, exercise_id, exercise_order, set_number, reps, load_kg, set_type, bodyweight_kg, entered_load, entered_unit)
+  select gen_random_uuid(), p_workout, w.user_id, p_exercise,
+    coalesce((select min(s.exercise_order) from public.workout_sets s where s.workout_id = p_workout and s.exercise_id = p_exercise),
+             (select count(distinct s.exercise_id) from public.workout_sets s where s.workout_id = p_workout))::smallint,
+    (select count(*) + 1 from public.workout_sets s where s.workout_id = p_workout)::smallint,
+    p_reps, p_load, p_type, p_bodyweight, p_entered, p_unit
+  from public.workouts w where w.id = p_workout
+  returning id;
+$$;
+
+-- An exercise's records as compact text, oldest first, such as '2026-01-08 e1rm 133.333<-120.000'.
+create function tests.records(p_user text, p_exercise uuid) returns text[]
+language sql as $$
+  select coalesce(array_agg(format('%s %s %s<-%s', r.local_date, r.type, r.value, r.previous_value) order by r.local_date, r.type), '{}')
+  from public.personal_records r
+  where r.user_id = tests.uid(p_user) and r.exercise_id = p_exercise;
+$$;
+
+create function tests.rebuild(p_user text, p_exercise uuid) returns integer
+language sql as $$
+  select private.rebuild_prs(tests.uid(p_user), p_exercise);
+$$;
