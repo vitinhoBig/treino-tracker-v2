@@ -3,7 +3,7 @@ begin;
 \ir helpers/fixtures.psql
 \ir helpers/training.psql
 
-select plan(44);
+select plan(46);
 
 create temp table ex as select tests.exercise('pullup', 'bodyweight') as pullup, tests.exercise('squat') as squat, tests.exercise('legpress') as legpress;
 create temp table w as select tests.workout('owner', '2026-03-10') as id;
@@ -94,6 +94,10 @@ select is(tests.total('viewer_w', 'owner', null, '2026-03-05', '2026-03-09'), 0,
 -- Filtering on a hidden column finds nothing, so it can't be used to guess the value.
 select tests.as_user('viewer_w');
 select is((select count(*)::int from public.get_shared_sets(tests.uid('owner')) r where r.bodyweight_kg > 0 and r.exercise_id = (select pullup from ex)), 0, 'filtering on a hidden value matches nothing');
+
+select is((select count(*)::int from public.workout_sets where user_id = tests.uid('owner') and bodyweight_kg > 70), 0, 'viewers can''t filter the table directly either');
+select is((select count(*)::int from public.workout_sets where user_id = tests.uid('owner')), 0, 'viewers have no direct access to the table');
+select tests.as_admin();
 
 -- Access changes apply on the next read.
 select tests.as_user('owner');

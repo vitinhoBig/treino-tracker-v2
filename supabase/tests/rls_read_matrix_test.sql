@@ -11,6 +11,9 @@ insert into tests.read_matrix values
   -- Connected users can see the owner's name.
   ('profiles', 'public.profiles', 'id = tests.uid(''owner'')', 1, 1, 1, 1, 0),
   -- Owner-only, even for "everything".
+  -- Viewers read sets through get_shared_sets, which masks body weight. Direct access would let them
+  -- filter on hidden columns.
+  ('workout_sets', 'public.workout_sets', 'user_id = tests.uid(''owner'')', 2, 0, 0, 0, 0),
   ('profile_details', 'public.profile_details', 'user_id = tests.uid(''owner'')', 1, 0, 0, 0, 0),
   ('user_sports', 'public.user_sports', 'user_id = tests.uid(''owner'')', 1, 0, 0, 0, 0),
   ('schedule_preferences', 'public.schedule_preferences', 'user_id = tests.uid(''owner'')', 1, 0, 0, 0, 0),
@@ -21,7 +24,6 @@ insert into tests.read_matrix values
   ('custom foods', 'public.foods', 'owner_id = tests.uid(''owner'')', 1, 0, 0, 0, 0),
   -- Workouts tier. Owners see the in-progress session as well, and viewers never do.
   ('workouts', 'public.workouts', 'user_id = tests.uid(''owner'')', 2, 1, 1, 1, 0),
-  ('workout_sets', 'public.workout_sets', 'user_id = tests.uid(''owner'')', 2, 1, 1, 1, 0),
   ('personal_records', 'public.personal_records', 'user_id = tests.uid(''owner'')', 1, 1, 1, 1, 0),
   ('custom exercises', 'public.exercises', 'owner_id = tests.uid(''owner'')', 1, 1, 1, 1, 0),
   ('custom exercise_muscles', 'public.exercise_muscles', 'muscle_group_id = ''test_chest''', 1, 1, 1, 1, 0),
