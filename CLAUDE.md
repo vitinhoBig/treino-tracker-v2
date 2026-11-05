@@ -128,6 +128,10 @@ npx supabase db reset                                # Rebuild locally from migr
 
 ## Testing expectations
 
+Database tests live in `supabase/tests/` and share data through `helpers/fixtures.psql`. A new table needs its fixture row
+and a row in `rls_read_matrix_test.sql`; if it holds a user's data, it also goes in `rls_write_test.sql`. Once a migration
+is on `main`, never edit it: add a new one and update `docs/DATA_MODEL.md` to match.
+
 Business logic ships with tests: analytics, nutrition math, guardrails, schedule suggestions and PR detection. Keep
 analytics and nutrition as pure functions so they can be tested without a database. Mock external APIs in tests, and
 never call USDA, Open Food Facts or Claude from the test suite.
