@@ -2,7 +2,7 @@
 begin;
 \ir helpers/fixtures.psql
 
-select plan(14);
+select plan(15);
 
 insert into public.workouts (id, user_id, local_date, started_at) values ('b0000000-0000-4000-8000-0000000000b1', tests.uid('stranger'), '2026-11-01', now());
 
@@ -39,8 +39,7 @@ select throws_ok(
     values (tests.uid('owner'), 'f0000000-0000-4000-8000-000000000001', 5, '2026-09-01', '2026-10-15', '2026-10-01', array['volume'])$$,
   '23514', null, 'an experiment baseline must end before the experiment starts');
 
--- TODO(victor): Add a test that 100 kg x 2 reps gives an e1RM of 106.667.
--- Hint: copy the 'Epley' line, use the next unused set number (12), and change plan(14) to plan(15).
+select is ((tests.add_set(12, 2, 100)).e1rm_kg, 106.667, 'Epley: 100 kg x 2 = 106.667'); 
 
 select * from finish();
 rollback;
