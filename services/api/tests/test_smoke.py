@@ -16,4 +16,11 @@ def test_hello_returns_message() -> None:
     response = client.get("/v1/hello")
 
     assert response.status_code == 200
-    assert response.json() == {"message": "Hello from the treino-tracker API"}
+    assert response.json() == {"message": "Hello, treino-tracker"}
+
+
+def test_hello_greets_the_given_name() -> None:
+    response = client.get("/v1/hello?name=Victor")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Hello, Victor"}
