@@ -2,7 +2,7 @@
 begin;
 \ir helpers/fixtures.psql
 
-select plan(7);
+select plan(8);
 
 select tests.as_admin();
 insert into public.shares (owner_id, scope, invite_token_hash, invite_expires_at)
@@ -21,8 +21,8 @@ select throws_ok($$select public.is_connected(tests.uid('owner'))$$, '42501', nu
 select tests.as_user('stranger');
 select is(public.can_view(tests.uid('owner'), 'workouts'), false, 'can_view is false with no share');
 
--- TODO(victor): Add a test that can_view is true when the owner checks their own data.
--- Hint: run tests.as_user('owner'), then copy the is(...) above. Change plan(7) to plan(8).
+select tests.as_user('owner');
+select is (public.can_view(tests.uid('owner'), 'workouts'), true, 'can_view is true for the owner''s own data');
 
 select * from finish();
 rollback;
