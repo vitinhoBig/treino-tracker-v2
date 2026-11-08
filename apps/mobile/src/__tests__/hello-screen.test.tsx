@@ -8,4 +8,9 @@ describe('HelloScreen', () => {
 
     expect(screen.getByText('Hello, treino-tracker')).toBeTruthy();
   });
+  it('shows today\'s date', async () => {
+    await render(<HelloScreen />);
+
+    expect(screen.getByText(/\d{1,4}[\/.-]\d{1,2}[\/.-]\d{1,4}/)).toBeTruthy();
+  });
 });
