@@ -19,7 +19,7 @@ roughly one conventional commit or a small series of them, and each module gets 
 - [x] Monorepo scaffold: `apps/mobile`, `services/api`, `supabase/`, `.gitignore`, `.env.example`
 - [x] Local Supabase running, with the schema as migrations
 - [x] RLS test suite in pgTAP, ported from the Phase 0 checks
-- [ ] CI: lint and tests for client, API and database on every push
+- [x] CI: lint and tests for client, API and database on every push
 - [ ] FastAPI skeleton: `/health`, JWT verification, error format
 - [ ] Expo skeleton: routing, TanStack Query, i18n (English, Brazilian Portuguese), unit formatting
 
