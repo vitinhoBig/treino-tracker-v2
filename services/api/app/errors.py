@@ -17,16 +17,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
 
-# Codes for the statuses we expect to return. Anything else falls back to "http_<status>".
-# TODO(victor): map 409 to "conflict" and 429 to "too_many_requests" by adding two entries here.
-# Hint: then add a test in tests/test_errors.py, using the /test/http-exception?status=409 route.
 _CODES = {
     400: "bad_request",
     401: "unauthorized",
     403: "forbidden",
     404: "not_found",
     405: "method_not_allowed",
+    409: "conflict",
     422: "validation_error",
+    429: "too_many_requests",
 }
 
 

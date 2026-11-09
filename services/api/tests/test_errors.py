@@ -108,7 +108,13 @@ def test_api_error_sets_status_code_message_details_and_headers() -> None:
 
 
 def test_http_exceptions_get_a_code_for_their_status() -> None:
-    for status, code in [(400, "bad_request"), (401, "unauthorized"), (403, "forbidden")]:
+    for status, code in [
+        (400, "bad_request"),
+        (401, "unauthorized"),
+        (403, "forbidden"),
+        (409, "conflict"),
+        (429, "too_many_requests"),
+    ]:
         response = client.get(f"/test/http-exception?status={status}")
 
         assert response.status_code == status
