@@ -70,3 +70,11 @@ def forge(header: dict[str, Any], claims: dict[str, Any], secret: bytes | None =
         return signing_input + "."
     signature = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
     return f"{signing_input}.{_b64(signature)}"
+
+
+def sign_raw(key: TestKey, payload: dict[str, Any]) -> str:
+    """Signs claims exactly as given. jwt.encode refuses some malformed claims, such as a list
+    issuer, and an attacker's tooling wouldn't have that restriction."""
+    return jwt.PyJWS().encode(
+        json.dumps(payload).encode(), key.private_key, algorithm="ES256", headers={"kid": key.kid}
+    )

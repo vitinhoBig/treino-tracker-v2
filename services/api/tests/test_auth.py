@@ -16,7 +16,7 @@ from app.jwks import JwksCache
 from app.main import create_app
 from app.settings import Settings, get_settings
 from tests.fakes import FakeClock, FakeSupabase
-from tests.keys import TestKey, forge, make_token
+from tests.keys import TestKey, forge, make_token, sign_raw
 
 SUPABASE_URL = "http://127.0.0.1:54321"
 ISSUER = f"{SUPABASE_URL}/auth/v1"
@@ -169,6 +169,13 @@ REJECTED: dict[str, Callable[[Env], str]] = {
     "service role": lambda e: make_token(e.key, role="service_role"),
     "anon role": lambda e: make_token(e.key, role="anon"),
     "no role": lambda e: make_token(e.key, role=None),
+    # Signed by the real key, but with claims of the wrong type. These must be 401s, never a crash.
+    "expiry is text": lambda e: make_token(e.key, exp="soon"),
+    "audience is a number": lambda e: make_token(e.key, aud=5),
+    "issuer is a list": lambda e: sign_raw(e.key, {**e.claims(), "iss": ["a", "b"]}),
+    "issued-at is text": lambda e: make_token(e.key, iat="yesterday"),
+    "subject is a list": lambda e: make_token(e.key, sub=["a"]),
+    "role is a list": lambda e: make_token(e.key, role=["authenticated"]),
     "no key id": lambda e: make_token(e.key, kid=None),
     "unknown key id": lambda e: make_token(e.key, kid="not-published"),
     "signed by a different key": lambda e: make_token(
