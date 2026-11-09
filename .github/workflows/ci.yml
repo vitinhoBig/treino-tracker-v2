@@ -1,0 +1,90 @@
+# Runs the same checks as the Commands section of CLAUDE.md, on every push.
+# The three jobs are independent, so they run in parallel and one failure doesn't hide the others.
+#
+# Actions are pinned to commit SHAs rather than tags: a tag can be moved to different code later, and a SHA can't.
+# Update a pin by looking up the new tag's SHA, for example:
+#   gh api repos/actions/checkout/git/ref/tags/<tag> --jq .object.sha
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+# The workflow only reads the code. Without this, the default token can be allowed to write to the repo.
+permissions:
+  contents: read
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          working-directory: services/api # Reads the Python version from services/api/.python-version
+      # --locked fails if uv.lock is out of date with pyproject.toml, instead of silently updating it.
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
+  mobile:
+    name: Mobile
+    runs-on: ubuntu-latest
+    # TODO(victor): add `timeout-minutes: 15` here, as the api and database jobs have.
+    # Hint: it's a key of the job, at the same level as `runs-on`. Without it, a hung job runs for 6 hours.
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      # npm ci installs exactly what package-lock.json says, and fails if it disagrees with package.json.
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      # Builds the web app. This catches mistakes that typecheck and tests miss, such as a test file placed
+      # in src/app, where Expo Router would treat it as a page.
+      - run: npx expo export --platform web --output-dir dist
+      # TODO(victor): add a step that runs `npx expo-doctor`, which checks the project's Expo setup.
+      # Hint: run it locally first (it passed 20/20 checks earlier), then add `- run: npx expo-doctor` above.
+
+  database:
+    name: Database
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      # The Supabase CLI version is pinned in the root package.json, so CI and your machine run the same one.
+      - run: npm ci
+      # The tests only need the database, auth and storage, because the schema depends on the auth and storage
+      # tables. Skipping the other services starts the stack faster. Starting it also applies every migration
+      # to an empty database, which proves they work from scratch.
+      - run: npx supabase start -x studio,imgproxy,mailpit,logflare,vector,edge-runtime,realtime,postgrest,postgres-meta,kong
+      - run: npx supabase test db
