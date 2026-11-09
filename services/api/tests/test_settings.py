@@ -74,6 +74,19 @@ def test_cache_times_must_be_positive(field: str) -> None:
         settings(supabase_url="http://127.0.0.1:54321", **{field: 0})
 
 
+@pytest.mark.parametrize("bad", [-1, 61])
+def test_jwt_leeway_must_be_between_0_and_60(bad: int) -> None:
+    with pytest.raises(ValidationError):
+        settings(supabase_url="http://127.0.0.1:54321", jwt_leeway_seconds=bad)
+
+
+@pytest.mark.parametrize("good", [0, 60])
+def test_jwt_leeway_accepts_the_edges(good: int) -> None:
+    s = settings(supabase_url="http://127.0.0.1:54321", jwt_leeway_seconds=good)
+
+    assert s.jwt_leeway_seconds == good
+
+
 def test_get_settings_is_created_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUPABASE_URL", "http://127.0.0.1:54321")
     get_settings.cache_clear()

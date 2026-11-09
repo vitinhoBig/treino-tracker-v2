@@ -25,11 +25,8 @@ class Settings(BaseSettings):
     # a client sending random key ids can't make the API hammer Supabase.
     jwks_min_refresh_seconds: int = Field(default=30, ge=1)
 
-    # Allowed clock difference, in seconds, between this server and Supabase when checking token
-    # times.
-    # TODO(victor): reject values below 0 or above 60 by using Field(default=10, ge=0, le=60).
-    # Hint: jwks_cache_seconds above shows the pattern. Then add a test in tests/test_settings.py.
-    jwt_leeway_seconds: int = 10
+    # Clock tolerance (seconds) between this server and Supabase when checking token times.
+    jwt_leeway_seconds: int = Field(default=10, ge=0, le=60)
 
     @field_validator("supabase_url")
     @classmethod

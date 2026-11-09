@@ -286,7 +286,8 @@ def test_one_key_cache_is_shared_for_a_project_and_not_across_projects() -> None
         _cache_for.cache_clear()
 
 
-# TODO(victor): add a test that a token whose `nbf` ("not before") is an hour in the future is
-# rejected as invalid_token. PyJWT already checks it, so the code needs no change.
-# Hint: copy test_an_anonymous_sign_in_is_refused_with_403, pass nbf=int(time.time()) + 3600 to
-# make_token, and expect 401 with the code "invalid_token".
+def test_a_token_that_is_not_valid_yet_is_rejected(env: Env) -> None:
+    response = env.get(make_token(env.key, nbf=int(time.time()) + 3600))
+
+    assert response.status_code == 401
+    assert error_of(response)["code"] == "invalid_token"
