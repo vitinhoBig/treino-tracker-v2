@@ -9,33 +9,8 @@ import httpx
 import pytest
 
 from app.jwks import JwksCache, JwksUnavailableError, fetch_jwks_over_http
+from tests.fakes import FakeClock, FakeSupabase
 from tests.keys import TestKey, jwks
-
-
-class FakeClock:
-    def __init__(self) -> None:
-        self.now = 1000.0
-
-    def __call__(self) -> float:
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
-
-
-class FakeSupabase:
-    """Stands in for the key endpoint, and counts how often it's called."""
-
-    def __init__(self, *keys: TestKey) -> None:
-        self.document: Any = jwks(*keys)
-        self.calls = 0
-        self.failing = False
-
-    def __call__(self) -> dict[str, Any]:
-        self.calls += 1
-        if self.failing:
-            raise httpx.ConnectError("Supabase is down")
-        return self.document
 
 
 def make_cache(supabase: FakeSupabase, clock: FakeClock, **options: float) -> JwksCache:
