@@ -43,8 +43,7 @@ jobs:
   mobile:
     name: Mobile
     runs-on: ubuntu-latest
-    # TODO(victor): add `timeout-minutes: 15` here, as the api and database jobs have.
-    # Hint: it's a key of the job, at the same level as `runs-on`. Without it, a hung job runs for 6 hours.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/mobile
@@ -65,9 +64,8 @@ jobs:
       # Builds the web app. This catches mistakes that typecheck and tests miss, such as a test file placed
       # in src/app, where Expo Router would treat it as a page.
       - run: npx expo export --platform web --output-dir dist
-      # TODO(victor): add a step that runs `npx expo-doctor`, which checks the project's Expo setup.
-      # Hint: run it locally first (it passed 20/20 checks earlier), then add `- run: npx expo-doctor` above.
-
+      - run: npx expo-doctor
+      
   database:
     name: Database
     runs-on: ubuntu-latest
