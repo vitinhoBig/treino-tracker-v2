@@ -12,6 +12,8 @@ map below that are not on disk yet arrive with their features. See [docs/ROADMAP
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): what lives where, and why
 - [docs/DATA_MODEL.md](docs/DATA_MODEL.md): schema, RLS and the v1 import rules
 - [docs/ROADMAP.md](docs/ROADMAP.md): delivery checklists
+- [docs/API_AUTH.md](docs/API_AUTH.md): how the API verifies Supabase tokens, and what the app does on each auth error
+- [docs/API_ERRORS.md](docs/API_ERRORS.md): the one error shape, and every error code
 
 ## How to work with Victor
 
