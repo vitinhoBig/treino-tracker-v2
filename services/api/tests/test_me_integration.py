@@ -91,8 +91,20 @@ def test_me_accepts_a_real_token_issued_by_supabase() -> None:
     assert response.json() == {"id": user_id}
 
 
-# TODO(victor): add a test that the same real token is rejected with a 401 `invalid_token` once
-# its signature is altered. Why it matters: the unit tests prove this with keys we generated, but
-# only this test can show it holds for the keys Supabase really signs with.
-# Hint: a JWT is three dot-separated parts. Change a character in the middle of the last one (not
-# the final character, which may only change padding bits), and reuse the helper above.
+def test_a_real_token_with_an_altered_signature_is_rejected() -> None:
+    _, access_token = _sign_up_and_get_access_token()
+    header, payload, signature = access_token.split(".")
+    middle = len(signature) // 2
+    swapped = "B" if signature[middle] == "A" else "A"
+    tampered = f"{header}.{payload}.{signature[:middle]}{swapped}{signature[middle + 1 :]}"
+    assert tampered != access_token
+
+    app = create_app()
+    settings = Settings(_env_file=None, supabase_url=SUPABASE_URL)
+    app.dependency_overrides[get_settings] = lambda: settings
+    _cache_for.cache_clear()
+
+    response = TestClient(app).get("/v1/me", headers={"Authorization": f"Bearer {tampered}"})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_token"

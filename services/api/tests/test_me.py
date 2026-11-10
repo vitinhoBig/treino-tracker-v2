@@ -1,5 +1,7 @@
 """GET /v1/me: the first protected route. It answers only for a verified token."""
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -84,8 +86,8 @@ def test_an_invalid_token_is_a_401(env: MeEnv, token: str) -> None:
     }
 
 
-# TODO(victor): add a test that an expired token gets a 401 with the code `token_expired`, not
-# `invalid_token`. Why it matters: the app should refresh the session on `token_expired` and send
-# the user to sign in on `invalid_token`, so mixing the two up would sign people out for no reason.
-# Hint: the Settings above allow 10 seconds of leeway, so make_token(env.key, exp=...) needs a
-# time well past that. Look at how test_auth.py builds its expired tokens.
+def test_an_expired_token_gets_token_expired(env: MeEnv) -> None:
+    response = env.get(make_token(env.key, exp=int(time.time()) - 3600))
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "token_expired"
