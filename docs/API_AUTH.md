@@ -91,7 +91,8 @@ an attacker. The reason goes to the server log, never the token itself.
 
 CI runs this file in its own job, `api-integration`, so the fast API job stays fast. The job starts only the services
 the test needs, waits until Auth answers at `SUPABASE_URL`, and fails if the stack is unreachable rather than letting
-the test skip. It also sets `REQUIRE_SUPABASE_TESTS=1`, which is meant to turn any skip into a failure once the
-`TODO(victor)` in the test file is done.
+the test skip. It also sets `REQUIRE_SUPABASE_TESTS=1`, which turns any skip in that file into a failure (the rule is
+in `tests/strict.py`). Two guards, then: the wait step fails on an unreachable stack, and the variable fails any other
+reason the test would have skipped.
 
 Errors are described in [API_ERRORS.md](API_ERRORS.md).
