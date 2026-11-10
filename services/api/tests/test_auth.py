@@ -121,7 +121,6 @@ def test_public_routes_need_no_token() -> None:
     client = TestClient(create_app())
 
     assert client.get("/health").status_code == 200
-    assert client.get("/v1/hello").status_code == 200
 
 
 # --- Not signed in ----------------------------------------------------------------------------

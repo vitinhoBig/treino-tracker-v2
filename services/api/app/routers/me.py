@@ -5,9 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.auth import CurrentUser
+from app.auth import AUTH_RESPONSES, CurrentUser
 
-router = APIRouter(prefix="/v1")
+router = APIRouter(prefix="/v1", responses=AUTH_RESPONSES)
 
 
 class Me(BaseModel):

@@ -15,14 +15,14 @@ A token is accepted only if all of this holds:
 import logging
 from dataclasses import dataclass, field
 from functools import lru_cache, partial
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import jwt
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.errors import ApiError
+from app.errors import ApiError, ErrorResponse
 from app.jwks import JwksCache, JwksUnavailableError, fetch_jwks_over_http
 from app.settings import Settings, get_settings
 
@@ -31,6 +31,24 @@ logger = logging.getLogger(__name__)
 ALLOWED_ALGORITHMS = ["ES256", "RS256", "EdDSA"]
 AUDIENCE = "authenticated"
 REQUIRED_CLAIMS = ["exp", "iss", "aud", "sub"]
+
+# Add `responses=AUTH_RESPONSES` to a router or route that uses CurrentUser, so the OpenAPI docs
+# list the errors a caller can get. FastAPI can't infer them: they're raised inside the dependency.
+AUTH_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: {
+        "model": ErrorResponse,
+        "description": "Missing, invalid or expired token: `missing_token`, `invalid_token` or "
+        "`token_expired`. Refresh the session on `token_expired`, and sign in again otherwise.",
+    },
+    403: {
+        "model": ErrorResponse,
+        "description": "The token belongs to an anonymous sign-in: `anonymous_user`.",
+    },
+    503: {
+        "model": ErrorResponse,
+        "description": "Supabase's signing keys are unreachable: `auth_unavailable`. Retry soon.",
+    },
+}
 
 bearer_scheme = HTTPBearer(auto_error=False, description="A Supabase access token")
 

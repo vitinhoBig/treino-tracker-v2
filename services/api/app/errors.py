@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,23 @@ _CODES = {
     422: "validation_error",
     429: "too_many_requests",
 }
+
+
+class ErrorDetail(BaseModel):
+    field: str
+    message: str
+
+
+class ErrorBody(BaseModel):
+    code: str
+    message: str
+    details: list[ErrorDetail] | None = None
+
+
+class ErrorResponse(BaseModel):
+    """The error shape as OpenAPI documents it. Responses are built by error_response() below."""
+
+    error: ErrorBody
 
 
 class ApiError(Exception):
