@@ -1,5 +1,5 @@
 # Runs the same checks as the Commands section of CLAUDE.md, on every push.
-# The three jobs are independent, so they run in parallel and one failure doesn't hide the others.
+# The four jobs are independent, so they run in parallel and one failure doesn't hide the others.
 #
 # Actions are pinned to commit SHAs rather than tags: a tag can be moved to different code later, and a SHA can't.
 # Update a pin by looking up the new tag's SHA, for example:
@@ -86,3 +86,72 @@ jobs:
       # to an empty database, which proves they work from scratch.
       - run: npx supabase start -x studio,imgproxy,mailpit,logflare,vector,edge-runtime,realtime,postgrest,postgres-meta,kong
       - run: npx supabase test db
+
+  # A separate job so the fast API job above stays fast: starting Supabase pulls several container images.
+  # It runs only the test that needs the real Supabase, which proves a token Supabase issued is accepted by this API.
+  api-integration:
+    name: API integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Tokens carry this exact string as their issuer, so the API and the test must use it unchanged.
+      SUPABASE_URL: http://127.0.0.1:54321
+      # In CI a skipped integration test means the stack was not tested, which must fail rather than pass.
+      REQUIRE_SUPABASE_TESTS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          working-directory: services/api
+      # The Supabase CLI version is pinned in the root package.json, so every job runs the same one.
+      - run: npm ci
+      - run: uv sync --locked
+        working-directory: services/api
+      # Token verification needs the database, auth (gotrue) and the gateway (kong) that serves /auth/v1.
+      # Storage stays because the schema depends on its tables. The database job also skips kong, so this
+      # list is not the same as that one.
+      - run: npx supabase start -x studio,imgproxy,mailpit,logflare,vector,edge-runtime,realtime,postgrest,postgres-meta,supavisor
+      # `supabase start` already waits for its containers. This also waits until Auth answers through the
+      # gateway at the URL the test will use, and serves the signing keys the API fetches. If the URL is
+      # wrong or Auth never comes up, the job fails here instead of the test skipping itself.
+      - name: Wait until Supabase Auth is healthy
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS --max-time 3 -o /dev/null "$SUPABASE_URL/auth/v1/health" \
+              && curl -fsS --max-time 3 -o /dev/null "$SUPABASE_URL/auth/v1/.well-known/jwks.json"; then
+              echo "Supabase Auth is healthy at $SUPABASE_URL (attempt $attempt)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Supabase Auth did not become healthy at $SUPABASE_URL"
+          exit 1
+      # The test signs up a user with the stack's publishable key, which is a public local-development value.
+      # Reading it here, instead of leaving the test to find it, means a missing key fails the job.
+      - name: Export the local publishable key
+        run: |
+          key=$(npx supabase status -o json | jq -r '.PUBLISHABLE_KEY // empty')
+          if [ -z "$key" ]; then
+            echo "::error::npx supabase status did not report a PUBLISHABLE_KEY"
+            exit 1
+          fi
+          echo "SUPABASE_PUBLISHABLE_KEY=$key" >> "$GITHUB_ENV"
+      - run: uv run pytest tests/test_me_integration.py -v -rs
+        working-directory: services/api
+      # Only on failure: shows which container was unhealthy, since the test output alone can't say.
+      - name: Show container state and logs
+        if: failure()
+        run: |
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}'
+          for container in $(docker ps -aq); do
+            echo "::group::$(docker inspect --format '{{.Name}}' "$container")"
+            docker logs --tail 40 "$container" 2>&1
+            echo "::endgroup::"
+          done

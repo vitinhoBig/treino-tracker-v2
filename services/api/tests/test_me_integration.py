@@ -1,5 +1,6 @@
 """GET /v1/me against a real, local Supabase: the one test that proves a token Supabase issued
-is accepted by this API. It skips itself when the local stack isn't running, so CI stays green.
+is accepted by this API. On a laptop it skips itself when the local stack isn't running. CI starts
+the stack in its own job (`api-integration`) and sets REQUIRE_SUPABASE_TESTS=1.
 
 Run it with `npx supabase start`. The publishable key comes from SUPABASE_PUBLISHABLE_KEY, or
 from `npx supabase status` when that isn't set.
@@ -60,6 +61,15 @@ def _skip_reason() -> str | None:
 _SKIP_REASON = _skip_reason()
 
 pytestmark = pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or "")
+
+# TODO(victor): when the environment variable REQUIRE_SUPABASE_TESTS is "1", a skip must become
+# a failure, with _SKIP_REASON as the message. Why it matters: CI runs this file to prove that
+# real Supabase tokens work. If the stack ever fails to start and the test quietly skips, the job
+# stays green while testing nothing. Today the CI job only guards this from the outside: its wait
+# step fails when Supabase isn't reachable. This TODO closes the other ways a test can skip.
+# Hint: skipif is decided once, at collection time. Keep it for laptops, and when the variable
+# is set, make something fail instead. An autouse fixture that calls pytest.fail(_SKIP_REASON)
+# is one option. Decide what "0", "" and an unset variable should mean, and test that rule.
 
 
 def _sign_up_and_get_access_token() -> tuple[str, str]:

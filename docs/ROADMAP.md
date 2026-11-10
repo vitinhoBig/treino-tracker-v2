@@ -21,7 +21,7 @@ roughly one conventional commit or a small series of them, and each module gets 
 - [x] RLS test suite in pgTAP, ported from the Phase 0 checks
 - [x] CI: lint and tests for client, API and database on every push
 - [x] FastAPI skeleton: `/health`, JWT verification, error format
-- [ ] CI runs the API integration tests against a local Supabase
+- [x] CI runs the API integration tests against a local Supabase
 - [ ] Expo skeleton: routing, TanStack Query, i18n (English, Brazilian Portuguese), unit formatting
 
 **Onboarding and profile**

@@ -137,7 +137,7 @@ npx supabase db reset                                # Rebuild locally from migr
 
 ## Testing expectations
 
-CI (`.github/workflows/ci.yml`) runs the API, mobile and database checks on every push. When you change a command in the
+CI (`.github/workflows/ci.yml`) runs the API, API integration, mobile and database checks on every push. When you change a command in the
 Commands section, change the workflow to match. Node is pinned in `.nvmrc`, and actions are pinned to commit SHAs.
 
 Database tests live in `supabase/tests/` and share data through `helpers/fixtures.psql`. A new table needs its fixture row
