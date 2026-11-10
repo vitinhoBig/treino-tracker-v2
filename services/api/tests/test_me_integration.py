@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from app.auth import _cache_for
 from app.main import create_app
 from app.settings import Settings, get_settings
+from tests.strict import strict_mode_enabled
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 # Written exactly as `npx supabase status` shows it, because tokens carry it as their issuer.
@@ -59,17 +60,15 @@ def _skip_reason() -> str | None:
 
 
 _SKIP_REASON = _skip_reason()
+_STRICT = strict_mode_enabled(os.environ.get("REQUIRE_SUPABASE_TESTS"))
 
-pytestmark = pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or "")
+pytestmark = pytest.mark.skipif(_SKIP_REASON is not None and not _STRICT, reason=_SKIP_REASON or "")
 
-# TODO(victor): when the environment variable REQUIRE_SUPABASE_TESTS is "1", a skip must become
-# a failure, with _SKIP_REASON as the message. Why it matters: CI runs this file to prove that
-# real Supabase tokens work. If the stack ever fails to start and the test quietly skips, the job
-# stays green while testing nothing. Today the CI job only guards this from the outside: its wait
-# step fails when Supabase isn't reachable. This TODO closes the other ways a test can skip.
-# Hint: skipif is decided once, at collection time. Keep it for laptops, and when the variable
-# is set, make something fail instead. An autouse fixture that calls pytest.fail(_SKIP_REASON)
-# is one option. Decide what "0", "" and an unset variable should mean, and test that rule.
+
+@pytest.fixture(autouse=True)
+def _require_supabase_in_strict_mode() -> None:
+    if _STRICT and _SKIP_REASON is not None:
+        pytest.fail(_SKIP_REASON)
 
 
 def _sign_up_and_get_access_token() -> tuple[str, str]:
