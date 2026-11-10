@@ -20,7 +20,8 @@ roughly one conventional commit or a small series of them, and each module gets 
 - [x] Local Supabase running, with the schema as migrations
 - [x] RLS test suite in pgTAP, ported from the Phase 0 checks
 - [x] CI: lint and tests for client, API and database on every push
-- [ ] FastAPI skeleton: `/health`, JWT verification, error format
+- [x] FastAPI skeleton: `/health`, JWT verification, error format
+- [ ] CI runs the API integration tests against a local Supabase
 - [ ] Expo skeleton: routing, TanStack Query, i18n (English, Brazilian Portuguese), unit formatting
 
 **Onboarding and profile**
@@ -65,6 +66,13 @@ roughly one conventional commit or a small series of them, and each module gets 
 - [ ] Exercise mapping file, reviewed by Victor
 - [ ] `services/api/scripts/import_v1.py`, with `--dry-run`, and tests
 - [ ] Import real data and check totals week by week
+
+**Known gaps** (found while building, not yet scheduled)
+
+- The OpenAPI docs show FastAPI's default 422 shape, not our `{"error": ...}` format.
+- A missing `SUPABASE_URL` only fails on the first protected request. It should fail at startup (deploy work).
+- Nothing checks that the error-code table in `docs/API_ERRORS.md` matches the codes in the API. A test should.
+- Deleting an account must also remove stored files, which database cascades don't reach. See the account deletion item.
 
 **Exit check:** Victor logs a real gym session on a phone, including a stretch in airplane mode. A PR appears, an
 invited viewer sees the correct feed line, and revoking access removes it. Charts show the 16 imported weeks.

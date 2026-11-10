@@ -3,8 +3,10 @@
 Cross-platform fitness app for strength training, sports and nutrition. It grows out of a Python CLI that tracked 16
 weeks of real training.
 
-**Current state: MVP, scaffold only.** Each part runs a hello-world, and no product features exist yet. Folders in the
-map below that are not on disk yet arrive with their features. See [docs/ROADMAP.md](docs/ROADMAP.md) for what is done.
+**Current state: MVP in progress, backend foundations only.** The database (schema, RLS, PR detection, viewer masking)
+and the API skeleton (error format, token verification, `/v1/me`) are built and tested. The mobile app is still a
+hello-world screen, and no user-facing features exist yet. Folders in the map below that are not on disk yet arrive
+with their features. See [docs/ROADMAP.md](docs/ROADMAP.md) for what is done.
 
 ## Read before changing things
 
