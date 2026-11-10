@@ -49,13 +49,7 @@ serving the last good keys for up to 24 hours if Supabase is unreachable. Keys o
 
 ### Why HS256 is refused
 
-<!-- TODO(victor): In your own words, write 3-4 sentences on why this API never accepts HS256, even though
-the local Supabase stack still has an HS256 "JWT secret" (see `npx supabase status`).
-Hint: compare what each side must hold to *check* a token with HS256 vs ES256. Then think about what an attacker
-gains if the server lets the token's own header pick the algorithm, and about what happens if this API's copy of a
-shared secret leaks. The test `tests/test_auth.py` has the attacks written out; start with the HS256 ones. -->
-
-*(Victor's paragraph goes here.)*
+HS256 is symmetric: the same secret both signs and verifies a token, so Supabase and this API would have to share it. If that secret ever leaked from the API server, an attacker could forge a valid token for any user. It also enables an algorithm-confusion attack: since the public key is public, an attacker can sign a token with HS256 using that public key as the secret, and a server that trusts the token's own `alg` header would verify it with the same key and accept it. By requiring asymmetric algorithms like ES256, the API only needs public keys, and the private signing key stays inside Supabase.
 
 ## Time: leeway, `exp`, `nbf`
 
