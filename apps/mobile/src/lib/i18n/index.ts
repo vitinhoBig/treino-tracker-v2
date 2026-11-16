@@ -5,11 +5,8 @@ import { initReactI18next } from 'react-i18next';
 import en from './en.json';
 import ptBR from './pt-BR.json';
 
-// TODO(victor): review the pt-BR wording in pt-BR.json, and decide how the app addresses the user:
-// "você" or "tu". Why it matters: the sign-in and sign-up screens bring about twenty strings in a
-// later step, and they all need the same voice, so settle it now while there are only two.
-// Hint: write the rule as one comment line right here, for example whether buttons use the
-// infinitive ("Entrar") or the imperative, and whether the app says "sua conta" or "tua conta".
+// pt-BR voice: address the user as "você", friendly and direct, never "tu"
+// Use the imperative for buttons ("Entrar", "Criar conta"), and keep error messages calm.
 
 export const SUPPORTED_LANGUAGES = ['en', 'pt-BR'] as const;
 export type Language = (typeof SUPPORTED_LANGUAGES)[number];
