@@ -272,3 +272,21 @@ describe('the token stays secret', () => {
 // Hint: call setup() with four replies (two expired, then two successes), start both requests
 // without awaiting them, then `await Promise.all([...])`. Check refreshSession's call count and
 // authOf(2) and authOf(3). To prove the test can fail, replace `??=` with `=` in refreshOnce in client.ts.
+describe('parallel token_expired', () => {
+  it('shares ONE refresh between two simultaneous requests', async () => {
+    const { client, refreshSession, authOf } = setup([
+      apiError(401, 'token_expired'),
+      apiError(401, 'token_expired'),
+      json(200, USER),
+      json(200, USER),
+    ]);
+
+    const first = client.request('/v1/me');
+    const second = client.request('/v1/me');
+
+    await expect(Promise.all([first, second])).resolves.toEqual([USER, USER]);
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(authOf(2)).toBe(`Bearer ${FRESH}`);
+    expect(authOf(3)).toBe(`Bearer ${FRESH}`);
+  });
+});
