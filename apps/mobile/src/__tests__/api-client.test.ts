@@ -265,13 +265,6 @@ describe('the token stays secret', () => {
   });
 });
 
-// TODO(victor): add a test that two requests sent at the same time, which both get
-// `token_expired`, cause exactly ONE refresh, and that both then succeed with the fresh token.
-// Why it matters: a Supabase refresh token can be used once. Two refreshes in parallel would make
-// the second one fail, and the user would be signed out for no reason.
-// Hint: call setup() with four replies (two expired, then two successes), start both requests
-// without awaiting them, then `await Promise.all([...])`. Check refreshSession's call count and
-// authOf(2) and authOf(3). To prove the test can fail, replace `??=` with `=` in refreshOnce in client.ts.
 describe('parallel token_expired', () => {
   it('shares ONE refresh between two simultaneous requests', async () => {
     const { client, refreshSession, authOf } = setup([
