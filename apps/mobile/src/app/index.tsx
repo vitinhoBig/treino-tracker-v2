@@ -1,10 +1,14 @@
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, Text, View } from 'react-native';
 
 export default function HelloScreen() {
+  const { t, i18n } = useTranslation();
+  const date = new Date().toLocaleDateString(i18n.language);
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Hello, treino-tracker</Text>
-      <Text style={styles.date}>{new Date().toLocaleDateString()}</Text>
+      <Text style={styles.title}>{t('hello.title')}</Text>
+      <Text style={styles.date}>{t('hello.today', { date })}</Text>
     </View>
   );
 }

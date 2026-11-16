@@ -1,0 +1,6 @@
+{
+  "hello": {
+    "title": "Hello, treino-tracker",
+    "today": "Today: {{date}}"
+  }
+}
