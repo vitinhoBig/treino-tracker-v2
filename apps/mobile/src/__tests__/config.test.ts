@@ -93,11 +93,20 @@ describe('loadConfig', () => {
     expect(attempt).toThrow(/secret key/);
     expect(attempt).not.toThrow(new RegExp(secret));
   });
-});
 
-// TODO(victor): add a test that a malformed URL is rejected with a ConfigError that names the
-// variable. Why it matters: a value like "localhost:54321" (no http://) would otherwise reach the
-// Supabase client and fail later with an unhelpful network error on the phone.
-// Hint: use it.each over a few bad values for EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_API_URL:
-// no scheme, "ftp://host", "http://", and one with a space inside. The message to expect is
-// "must be a full http(s) URL".
+  describe.each([
+  ['EXPO_PUBLIC_SUPABASE_URL', 'supabaseUrl'],
+    ['EXPO_PUBLIC_API_URL', 'apiUrl'],
+  ])('%s', (name, field) => {
+    it.each(['localhost:54321', 'ftp://host', 'http://', 'http://has space'])(
+      'rejects the malformed value %j',
+      (bad) => {
+        const attempt = () => loadConfig({ ...raw, [field]: bad }, { isDev: false });
+
+        expect(attempt).toThrow(ConfigError);
+        expect(attempt).toThrow(name);
+        expect(attempt).toThrow('must be a full http(s) URL');
+      },
+    );
+  });
+});
