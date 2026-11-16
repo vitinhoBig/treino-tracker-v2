@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react-native';
+import { cleanup, render, screen } from '@testing-library/react-native';
 
 import HelloScreen from '@/app/index';
 import i18n from '@/lib/i18n';
@@ -6,6 +6,9 @@ import i18n from '@/lib/i18n';
 describe('HelloScreen', () => {
   // The device language decides the starting language, so every test sets its own.
   afterEach(async () => {
+    // This hook runs before the library's own cleanup, so the screen is still mounted here.
+    // Unmount it first, so the language change does not re-render it outside act().
+    await cleanup();
     await i18n.changeLanguage('en');
   });
 
