@@ -1,36 +1,14 @@
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
-import { act, render, screen } from '@testing-library/react-native';
+import { render, screen } from '@testing-library/react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { Text } from 'react-native';
 
 import { SessionProvider, useSession, type SessionAuth, type SessionValue } from '@/lib/auth/session';
 import { SplashGate } from '@/lib/auth/splash-gate';
+import { fakeAuth, SESSION } from '@/test-support/fake-auth';
 
 jest.mock('expo-splash-screen', () => ({ hideAsync: jest.fn(async () => {}) }));
-
-const SESSION = { access_token: 'a', refresh_token: 'r', user: { id: 'u1' } } as unknown as Session;
-
-// A fake supabase.auth. `emit` plays the part of Supabase firing an auth event.
-function fakeAuth() {
-  let callback: ((event: AuthChangeEvent, session: Session | null) => void) | null = null;
-  const unsubscribe = jest.fn(() => {
-    callback = null;
-  });
-  const auth = {
-    onAuthStateChange: jest.fn((cb: (event: AuthChangeEvent, session: Session | null) => void) => {
-      callback = cb;
-      return { data: { subscription: { unsubscribe } } };
-    }),
-    signInWithPassword: jest.fn(async () => ({ error: null })),
-    signUp: jest.fn(async () => ({ data: { session: SESSION as Session | null }, error: null })),
-    signOut: jest.fn(async () => ({ error: null })),
-    startAutoRefresh: jest.fn(async () => {}),
-    stopAutoRefresh: jest.fn(async () => {}),
-  } satisfies SessionAuth;
-  const emit = (event: AuthChangeEvent, session: Session | null) => act(() => callback?.(event, session));
-  return { auth, emit, unsubscribe };
-}
 
 // Renders the provider and exposes the latest context value.
 async function renderProvider(auth: SessionAuth) {
@@ -182,6 +160,87 @@ describe('SessionProvider actions', () => {
     await latest.value!.signOut();
 
     expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+});
+
+describe('SessionProvider tokens for the API client', () => {
+  it('gives the access token of the latest session, read fresh each time', async () => {
+    const { auth } = fakeAuth();
+    const { latest } = await renderProvider(auth);
+    await expect(latest.value!.getAccessToken()).resolves.toBe('a');
+
+    auth.getSession.mockResolvedValueOnce({
+      data: { session: { ...SESSION, access_token: 'a2' } as Session },
+      error: null,
+    });
+
+    await expect(latest.value!.getAccessToken()).resolves.toBe('a2');
+  });
+
+  it('gives null when nobody is signed in', async () => {
+    const { auth } = fakeAuth();
+    auth.getSession.mockResolvedValueOnce({ data: { session: null }, error: null });
+    const { latest } = await renderProvider(auth);
+
+    await expect(latest.value!.getAccessToken()).resolves.toBeNull();
+  });
+
+  // The API client treats null as "signed out", so a network failure must not look like null.
+  it('reports a failed refresh that could not reach Supabase as a network error, not as signed out', async () => {
+    const { auth } = fakeAuth();
+    auth.getSession.mockResolvedValueOnce({
+      data: { session: null },
+      error: new AuthRetryableFetchError('Failed to fetch', 0),
+    });
+    const { latest } = await renderProvider(auth);
+
+    await expect(latest.value!.getAccessToken()).rejects.toMatchObject({ code: 'network_error', status: null });
+  });
+
+  it('gives null when Supabase refused the refresh, because that session is gone', async () => {
+    const { auth } = fakeAuth();
+    auth.getSession.mockResolvedValueOnce({
+      data: { session: null },
+      error: new AuthApiError('Invalid Refresh Token', 400, 'refresh_token_not_found'),
+    });
+    const { latest } = await renderProvider(auth);
+
+    await expect(latest.value!.getAccessToken()).resolves.toBeNull();
+  });
+
+  it('refreshes the session and gives the new access token', async () => {
+    const { auth } = fakeAuth();
+    auth.refreshSession.mockResolvedValueOnce({
+      data: { session: { ...SESSION, access_token: 'a3' } as Session },
+      error: null,
+    });
+    const { latest } = await renderProvider(auth);
+
+    await expect(latest.value!.refreshSession()).resolves.toBe('a3');
+  });
+
+  it('gives null when the refresh fails, whatever the reason', async () => {
+    const { auth } = fakeAuth();
+    auth.refreshSession.mockResolvedValueOnce({
+      data: { session: null },
+      error: new AuthApiError('Invalid Refresh Token', 400, 'refresh_token_already_used'),
+    });
+    const { latest } = await renderProvider(auth);
+
+    await expect(latest.value!.refreshSession()).resolves.toBeNull();
+  });
+
+  // The API client is built from these, so a new function on every auth event would rebuild it.
+  it('keeps the same functions when the session changes', async () => {
+    const { auth, emit } = fakeAuth();
+    const { latest } = await renderProvider(auth);
+    const before = { ...latest.value! };
+
+    await emit('INITIAL_SESSION', SESSION);
+
+    expect(latest.value!.getAccessToken).toBe(before.getAccessToken);
+    expect(latest.value!.refreshSession).toBe(before.refreshSession);
+    expect(latest.value!.signOut).toBe(before.signOut);
   });
 });
 

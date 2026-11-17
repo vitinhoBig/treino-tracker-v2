@@ -7,10 +7,11 @@
 import type { AuthChangeEvent, AuthError, Session } from '@supabase/supabase-js';
 import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { createContext, use, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AppState, Platform } from 'react-native';
 
+import { ApiError } from '@/lib/api/errors';
 import { getSupabase } from '@/lib/supabase';
 
+import { platformAppState } from './app-state';
 import { bindAutoRefresh, type AppStateLike, type AutoRefreshAuth } from './auto-refresh';
 
 type Credentials = { email: string; password: string };
@@ -23,6 +24,8 @@ export type SessionAuth = AutoRefreshAuth & {
   signInWithPassword(credentials: Credentials): Promise<{ error: AuthError | null }>;
   signUp(credentials: Credentials): Promise<{ data: { session: Session | null }; error: AuthError | null }>;
   signOut(options: { scope: 'local' }): Promise<{ error: AuthError | null }>;
+  getSession(): Promise<{ data: { session: Session | null }; error: AuthError | null }>;
+  refreshSession(): Promise<{ data: { session: Session | null }; error: AuthError | null }>;
 };
 
 export type SessionStatus = 'loading' | 'signedOut' | 'signedIn';
@@ -37,6 +40,15 @@ export type SessionValue = {
   signIn(credentials: Credentials): Promise<AuthResult>;
   signUp(credentials: Credentials): Promise<SignUpResult>;
   signOut(): Promise<void>;
+  /**
+   * The current access token, or null when nobody is signed in. Reads the latest session, not the
+   * one from the last render, and refreshes a token that is about to expire. Throws an ApiError
+   * with code network_error when a needed refresh couldn't reach Supabase: the user is still signed
+   * in, so that must not look like "signed out".
+   */
+  getAccessToken(): Promise<string | null>;
+  /** Refreshes the session and returns the new access token, or null if Supabase refused. */
+  refreshSession(): Promise<string | null>;
 };
 
 export const NETWORK_ERROR = 'network_error';
@@ -74,8 +86,7 @@ export function SessionProvider({ children, auth, appState }: Props) {
       // the client from here can deadlock it during a token refresh.
       setState({ status: session ? 'signedIn' : 'signedOut', session });
     });
-    // Browsers pause the timer themselves when a tab is hidden, so web needs no AppState.
-    const states = appState === undefined ? (Platform.OS === 'web' ? null : AppState) : appState;
+    const states = appState === undefined ? platformAppState() : appState;
     const unbind = states ? bindAutoRefresh(client, states) : () => {};
     return () => {
       data.subscription.unsubscribe();
@@ -83,9 +94,10 @@ export function SessionProvider({ children, auth, appState }: Props) {
     };
   }, [getAuth, appState]);
 
-  const value = useMemo<SessionValue>(
+  // Kept apart from the state so these functions stay the same object across renders. The API
+  // client is built from them, and it would otherwise be rebuilt on every auth event.
+  const actions = useMemo<Omit<SessionValue, 'status' | 'session'>>(
     () => ({
-      ...state,
       async signIn(credentials) {
         const { error } = await getAuth().signInWithPassword(credentials);
         return error ? failure(error) : { ok: true };
@@ -103,9 +115,25 @@ export function SessionProvider({ children, auth, appState }: Props) {
         // call, so signing out works offline. The SIGNED_OUT event then updates the state.
         await getAuth().signOut({ scope: 'local' });
       },
+      async getAccessToken() {
+        const { data, error } = await getAuth().getSession();
+        if (data.session) return data.session.access_token;
+        // No session plus an error means the token had run out and refreshing it failed. When the
+        // failure was only reaching Supabase, the session is still stored and still good.
+        if (error && isAuthRetryableFetchError(error)) {
+          throw new ApiError(null, NETWORK_ERROR, 'Could not refresh the session: Supabase was unreachable.');
+        }
+        return null;
+      },
+      async refreshSession() {
+        const { data, error } = await getAuth().refreshSession();
+        return error ? null : (data.session?.access_token ?? null);
+      },
     }),
-    [state, getAuth],
+    [getAuth],
   );
+
+  const value = useMemo<SessionValue>(() => ({ ...state, ...actions }), [state, actions]);
 
   return <SessionContext value={value}>{children}</SessionContext>;
 }
