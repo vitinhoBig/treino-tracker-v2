@@ -195,9 +195,17 @@ describe('useSession', () => {
 
     await expect(render(<Lonely />)).rejects.toThrow('inside <SessionProvider>');
   });
-});
+  
+  it('keeps the user signed in and exposes the new session after a token refresh', async () => {
+    const { auth, emit } = fakeAuth();
+    const { latest } = await renderProvider(auth);
+    await emit('INITIAL_SESSION', SESSION);
+    const refreshed: Session = { ...SESSION, access_token: 'a2' };
 
-// TODO(victor): add a provider test for a token refresh. After INITIAL_SESSION with SESSION, emit
-// 'TOKEN_REFRESHED' with a new session object (same shape, different access_token). Check that the
-// status stays 'signedIn' and that `latest.value?.session` is the new object, not SESSION. To see it
-// fail, make the onAuthStateChange callback in session.tsx ignore every event except INITIAL_SESSION.
+    await emit('TOKEN_REFRESHED', refreshed);
+
+    expect(screen.getByText('signedIn')).toBeTruthy();
+    expect(latest.value?.session).toBe(refreshed);
+    expect(latest.value?.session).not.toBe(SESSION);
+  });
+});
