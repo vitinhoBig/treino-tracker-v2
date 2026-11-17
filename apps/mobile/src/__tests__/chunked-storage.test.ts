@@ -215,6 +215,60 @@ describe('createChunkedStorage', () => {
   });
 });
 
+// supabase-js calls storage concurrently (a sign-out during a refresh), so operations must not
+// interleave. Each test starts operations without awaiting, like the library does.
+describe('createChunkedStorage with concurrent calls', () => {
+  it('lets a read during a write see the old or the new value, never no session', async () => {
+    const fake = fakeStore();
+    let delayed = false;
+    // The reader's second chunk read waits a moment, which is when a write could slip in.
+    const slowStore: KeyValueStore = {
+      ...fake.store,
+      async getItemAsync(key) {
+        if (key === `${KEY}.a.1` && !delayed) {
+          delayed = true;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        return fake.store.getItemAsync(key);
+      },
+    };
+    const storage = createChunkedStorage(slowStore);
+    const old = session(5000, 'o');
+    const next = session(5000, 'n');
+    await storage.setItem(KEY, old);
+
+    const reading = storage.getItem(KEY);
+    const writing = storage.setItem(KEY, next);
+
+    expect([old, next]).toContain(await reading);
+    await writing;
+    expect(await storage.getItem(KEY)).toBe(next);
+  });
+
+  it('keeps two writes at once from mixing their chunks', async () => {
+    const { store, data } = fakeStore();
+    const storage = createChunkedStorage(store);
+    const longer = session(9000, 'l');
+    const shorter = session(3000, 's');
+
+    await Promise.all([storage.setItem(KEY, longer), storage.setItem(KEY, shorter)]);
+
+    expect(await storage.getItem(KEY)).toBe(shorter); // the call made last wins
+    expect([...data.keys()].filter((key) => key.includes('.a.'))).toEqual([]);
+  });
+
+  it('runs the next call after one that failed', async () => {
+    const storage = createChunkedStorage(fakeStore().store);
+
+    const failing = storage.setItem('bad key', 'x');
+    const next = storage.setItem(KEY, 'value');
+
+    await expect(failing).rejects.toThrow('characters');
+    await next;
+    expect(await storage.getItem(KEY)).toBe('value');
+  });
+});
+
 describe('non-ASCII text', () => {
   it('round-trips accents and emoji across many tiny chunks', async () => {
     const { store, data } = fakeStore();

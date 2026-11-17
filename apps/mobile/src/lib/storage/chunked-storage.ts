@@ -10,6 +10,13 @@
 // that points at it is the commit. A crash before that leaves the old manifest pointing at old,
 // intact chunks. A reader that finds any chunk missing returns null ("no session"), never a
 // partial string that would parse as corrupt JSON.
+//
+// Operations run one at a time, in the order they were called. supabase-js has not serialized its
+// storage calls since v2.107 (see @supabase/auth-js/migrations/lockless-coordination.md): a sign-out
+// can run during a token refresh, and its "commit guard" reads storage and takes null to mean a
+// sign-out happened. A chunked value is several store calls, so without a queue a read during a
+// write could see the old manifest after its chunks were deleted and return a false null, and two
+// writes could mix their chunks.
 
 // The part of expo-secure-store this file uses, so tests can pass an in-memory fake.
 export type KeyValueStore = {
@@ -92,6 +99,14 @@ export function createChunkedStorage(
   store: KeyValueStore,
   { chunkBytes = DEFAULT_CHUNK_BYTES }: { chunkBytes?: number } = {},
 ): SessionStorage {
+  // The end of the queue. Each operation starts when the one before it settles, even if it failed.
+  let tail: Promise<unknown> = Promise.resolve();
+  function serialized<T>(operation: () => Promise<T>): Promise<T> {
+    const result = tail.then(operation, operation);
+    tail = result.catch(() => undefined);
+    return result;
+  }
+
   function checkKey(key: string) {
     if (!KEY_PATTERN.test(key)) throw new Error(`Storage key has characters SecureStore refuses: ${key}`);
   }
@@ -107,42 +122,46 @@ export function createChunkedStorage(
     }
   }
 
+  async function read(key: string): Promise<string | null> {
+    checkKey(key);
+    const manifest = parseManifest(await store.getItemAsync(key));
+    if (manifest === null) return null;
+    const chunks: string[] = [];
+    for (let index = 0; index < manifest.count; index += 1) {
+      const chunk = await store.getItemAsync(chunkKey(key, manifest.slot, index));
+      if (chunk === null) return null;
+      chunks.push(chunk);
+    }
+    return chunks.join('');
+  }
+
+  async function write(key: string, value: string): Promise<void> {
+    checkKey(key);
+    const live = parseManifest(await store.getItemAsync(key));
+    const slot: Slot = live?.slot === 'a' ? 'b' : 'a';
+    const chunks = splitByBytes(value, chunkBytes);
+    for (const [index, chunk] of chunks.entries()) {
+      await store.setItemAsync(chunkKey(key, slot, index), chunk);
+    }
+    // Leftovers in the new slot from an older, longer value or a crashed write.
+    await deleteChunks(key, slot, chunks.length);
+    // The commit: from here on readers see the new value.
+    await store.setItemAsync(key, JSON.stringify({ slot, count: chunks.length } satisfies Manifest));
+    // The old value, or chunks left by a removal that crashed part-way.
+    await deleteChunks(key, slot === 'a' ? 'b' : 'a', 0);
+  }
+
+  async function remove(key: string): Promise<void> {
+    checkKey(key);
+    // The manifest goes first, so a crash part-way leaves "no session", not half a session.
+    await store.deleteItemAsync(key);
+    await deleteChunks(key, 'a', 0);
+    await deleteChunks(key, 'b', 0);
+  }
+
   return {
-    async getItem(key) {
-      checkKey(key);
-      const manifest = parseManifest(await store.getItemAsync(key));
-      if (manifest === null) return null;
-      const chunks: string[] = [];
-      for (let index = 0; index < manifest.count; index += 1) {
-        const chunk = await store.getItemAsync(chunkKey(key, manifest.slot, index));
-        if (chunk === null) return null;
-        chunks.push(chunk);
-      }
-      return chunks.join('');
-    },
-
-    async setItem(key, value) {
-      checkKey(key);
-      const live = parseManifest(await store.getItemAsync(key));
-      const slot: Slot = live?.slot === 'a' ? 'b' : 'a';
-      const chunks = splitByBytes(value, chunkBytes);
-      for (const [index, chunk] of chunks.entries()) {
-        await store.setItemAsync(chunkKey(key, slot, index), chunk);
-      }
-      // Leftovers in the new slot from an older, longer value or a crashed write.
-      await deleteChunks(key, slot, chunks.length);
-      // The commit: from here on readers see the new value.
-      await store.setItemAsync(key, JSON.stringify({ slot, count: chunks.length } satisfies Manifest));
-      // The old value, or chunks left by a removal that crashed part-way.
-      await deleteChunks(key, slot === 'a' ? 'b' : 'a', 0);
-    },
-
-    async removeItem(key) {
-      checkKey(key);
-      // The manifest goes first, so a crash part-way leaves "no session", not half a session.
-      await store.deleteItemAsync(key);
-      await deleteChunks(key, 'a', 0);
-      await deleteChunks(key, 'b', 0);
-    },
+    getItem: (key) => serialized(() => read(key)),
+    setItem: (key, value) => serialized(() => write(key, value)),
+    removeItem: (key) => serialized(() => remove(key)),
   };
 }
