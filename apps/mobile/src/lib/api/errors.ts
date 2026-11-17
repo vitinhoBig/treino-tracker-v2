@@ -1,10 +1,11 @@
 /**
  * Every failure from the API client is an ApiError. `code` is what the app branches on, as in
- * docs/API_ERRORS.md. Two codes come from the client itself, for failures where the server never
+ * docs/API_ERRORS.md. Three codes come from the client itself, for failures where the server never
  * gave an answer in our format.
  */
 
 export const NETWORK_ERROR = 'network_error';
+export const TIMEOUT = 'timeout';
 export const UNEXPECTED_RESPONSE = 'unexpected_response';
 
 export type ErrorDetail = { field: string; message: string };

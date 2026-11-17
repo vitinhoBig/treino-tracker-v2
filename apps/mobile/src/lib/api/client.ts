@@ -1,4 +1,4 @@
-import { ApiError, errorFromBody, NETWORK_ERROR, UNEXPECTED_RESPONSE } from './errors';
+import { ApiError, errorFromBody, NETWORK_ERROR, TIMEOUT, UNEXPECTED_RESPONSE } from './errors';
 
 /** The parts of a fetch response the client uses. Narrow on purpose, so tests can fake it. */
 export type HttpResponse = { ok: boolean; status: number; text(): Promise<string> };
@@ -17,7 +17,14 @@ export type ApiClientDependencies = {
   /** How many times to retry `auth_unavailable`. The waits double each time, from backoffMs. */
   unavailableRetries?: number;
   backoffMs?: number;
+  /** How long one request may take, from sending it to reading the whole answer. */
+  timeoutMs?: number;
 };
+
+/** One request's answer, with the body already read inside the timeout. */
+type Exchange = { ok: boolean; status: number; text: string };
+
+export const DEFAULT_TIMEOUT_MS = 15_000;
 
 export type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -41,6 +48,11 @@ const defaultSleep = (milliseconds: number) =>
  * - `auth_unavailable`: retry a few times with growing waits, and never sign out
  * - anything else, including `anonymous_user`: throw it for the screen to show
  *
+ * Every request has a timeout, because neither fetch in React Native has one: a phone that drops
+ * to a dead connection would otherwise wait for the operating system, which can take minutes. A
+ * request that runs out of time fails with `timeout`. This client doesn't retry it, since a
+ * retry rule belongs to the caller (the query layer), which knows whether the request is safe to repeat.
+ *
  * Nothing here logs. The token goes only into the Authorization header.
  */
 export function createApiClient(dependencies: ApiClientDependencies): ApiClient {
@@ -53,6 +65,7 @@ export function createApiClient(dependencies: ApiClientDependencies): ApiClient 
     sleep = defaultSleep,
     unavailableRetries = 2,
     backoffMs = 500,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
   } = dependencies;
 
   // Several requests can find the token expired at the same moment. They share one refresh, because
@@ -68,33 +81,60 @@ export function createApiClient(dependencies: ApiClientDependencies): ApiClient 
     return refreshInFlight;
   }
 
-  async function call(path: string, token: string, options: RequestOptions): Promise<HttpResponse> {
+  /**
+   * Sends one request and reads the whole answer, all inside the timeout.
+   *
+   * Why the failure is judged by state, not by the error's name: Expo's fetch throws a plain
+   * `fetch failed` error for a request cancelled before it started and passes the abort reason on
+   * for one cancelled later, so neither reliably arrives as an `AbortError`.
+   */
+  async function exchange(path: string, token: string, options: RequestOptions): Promise<Exchange> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       Authorization: `Bearer ${token}`,
     };
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+
+    // One controller for both reasons to stop: the caller cancelling and the time running out.
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    const cancel = () => controller.abort();
+    if (options.signal?.aborted) cancel();
+    else options.signal?.addEventListener('abort', cancel);
+
     try {
-      return await send(`${baseUrl}${path}`, {
+      const response = await send(`${baseUrl}${path}`, {
         method: options.method ?? 'GET',
         headers,
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
-        signal: options.signal,
+        signal: controller.signal,
       });
+      return { ok: response.ok, status: response.status, text: await response.text() };
     } catch (error) {
-      // A cancelled request is the caller's decision, not a failure, so it passes through as is.
-      if (error instanceof Error && error.name === 'AbortError') throw error;
+      // A cancelled request is the caller's decision, not a failure, so it passes through as one.
+      if (options.signal?.aborted) {
+        throw error instanceof Error && error.name === 'AbortError'
+          ? error
+          : Object.assign(new Error('The request was cancelled.'), { name: 'AbortError' });
+      }
+      if (timedOut) throw new ApiError(null, TIMEOUT, 'The API took too long to answer.');
       throw new ApiError(null, NETWORK_ERROR, 'The API could not be reached.');
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', cancel);
     }
   }
 
-  async function readSuccess<T>(response: HttpResponse): Promise<T> {
-    const text = await response.text();
-    if (text === '') return undefined as T;
+  function readSuccess<T>(reply: Exchange): T {
+    if (reply.text === '') return undefined as T;
     try {
-      return JSON.parse(text) as T;
+      return JSON.parse(reply.text) as T;
     } catch {
-      throw new ApiError(response.status, UNEXPECTED_RESPONSE, 'The response was not valid JSON.');
+      throw new ApiError(reply.status, UNEXPECTED_RESPONSE, 'The response was not valid JSON.');
     }
   }
 
@@ -108,10 +148,10 @@ export function createApiClient(dependencies: ApiClientDependencies): ApiClient 
     let refreshed = false;
     let unavailableAttempts = 0;
     for (;;) {
-      const response = await call(path, token, options);
-      if (response.ok) return readSuccess<T>(response);
+      const reply = await exchange(path, token, options);
+      if (reply.ok) return readSuccess<T>(reply);
 
-      const error = errorFromBody(response.status, await response.text());
+      const error = errorFromBody(reply.status, reply.text);
       switch (error.code) {
         case 'token_expired': {
           const fresh = refreshed ? null : await refreshOnce();

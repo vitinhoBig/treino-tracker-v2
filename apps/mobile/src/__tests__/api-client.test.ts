@@ -193,11 +193,25 @@ describe('failures outside our error format', () => {
     expect(signOut).not.toHaveBeenCalled();
   });
 
-  it('lets a cancelled request through as a cancellation', async () => {
+  it('lets a request the caller cancelled through as a cancellation', async () => {
     const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
     const { client } = setup([abort]);
+    const controller = new AbortController();
+    controller.abort();
 
-    await expect(client.request('/v1/me')).rejects.toBe(abort);
+    await expect(client.request('/v1/me', { signal: controller.signal })).rejects.toBe(abort);
+  });
+
+  // Expo's fetch throws a plain "fetch failed" error for a request cancelled before it starts.
+  it('recognises a cancellation by the caller whatever error fetch throws for it', async () => {
+    const { client } = setup([new Error('fetch failed: The operation was aborted.')]);
+    const controller = new AbortController();
+    controller.abort();
+
+    const error = await client.request('/v1/me', { signal: controller.signal }).catch((e: unknown) => e);
+
+    expect(error).toMatchObject({ name: 'AbortError' });
+    expect(error).not.toBeInstanceOf(ApiError);
   });
 
   it('reports an HTML error page from a proxy as unexpected_response, keeping the status', async () => {
@@ -281,5 +295,88 @@ describe('parallel token_expired', () => {
     expect(refreshSession).toHaveBeenCalledTimes(1);
     expect(authOf(2)).toBe(`Bearer ${FRESH}`);
     expect(authOf(3)).toBe(`Bearer ${FRESH}`);
+  });
+});
+
+describe('timeout', () => {
+  const TIMEOUT_MS = 1000;
+  afterEach(() => jest.useRealTimers());
+
+  // A fetch that never answers until it is cancelled, then fails the way Expo's fetch does: with a
+  // plain error, not an AbortError. So the client has to know it was the timer that cancelled.
+  function clientWith(fetch: (url: string, init: RequestInit) => Promise<HttpResponse>) {
+    const signOut = jest.fn(async () => {});
+    const client = createApiClient({
+      baseUrl: 'http://api.test',
+      fetch,
+      getAccessToken: async () => TOKEN,
+      refreshSession: async () => FRESH,
+      signOut,
+      timeoutMs: TIMEOUT_MS,
+    });
+    return { client, signOut };
+  }
+  const whenCancelled = (init: RequestInit, reject: (reason: Error) => void) =>
+    init.signal?.addEventListener('abort', () => reject(new Error('fetch failed: aborted')));
+
+  it('fails with timeout, and no status, when the API never answers', async () => {
+    jest.useFakeTimers();
+    const fetch = jest.fn((_url: string, init: RequestInit) => new Promise<HttpResponse>((_resolve, reject) => whenCancelled(init, reject)));
+    const { client, signOut } = clientWith(fetch);
+
+    const pending = failure(client.request('/v1/me'));
+    await jest.advanceTimersByTimeAsync(TIMEOUT_MS - 1);
+    let settled = false;
+    void pending.then(() => (settled = true));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false); // still waiting one millisecond before the limit
+
+    await jest.advanceTimersByTimeAsync(1);
+
+    expect(await pending).toMatchObject({ status: null, code: 'timeout' });
+    expect(fetch).toHaveBeenCalledTimes(1); // this client never retries a timeout
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('also times out while the body is still arriving', async () => {
+    jest.useFakeTimers();
+    const fetch = async (_url: string, init: RequestInit): Promise<HttpResponse> => ({
+      ok: true,
+      status: 200,
+      text: () => new Promise<string>((_resolve, reject) => whenCancelled(init, reject)),
+    });
+    const { client } = clientWith(fetch);
+
+    const pending = failure(client.request('/v1/me'));
+    await jest.advanceTimersByTimeAsync(TIMEOUT_MS);
+
+    expect(await pending).toMatchObject({ status: null, code: 'timeout' });
+  });
+
+  it('leaves no timer running once the request has finished, whichever way it ended', async () => {
+    jest.useFakeTimers();
+    const ok = clientWith(async () => ({ ok: true, status: 200, text: async () => '{}' }));
+    const failed = clientWith(async () => {
+      throw new TypeError('Network request failed');
+    });
+
+    await ok.client.request('/v1/me');
+    expect(jest.getTimerCount()).toBe(0);
+    await failure(failed.client.request('/v1/me'));
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('reports a cancellation by the caller as a cancellation, not as a timeout', async () => {
+    jest.useFakeTimers();
+    const fetch = (_url: string, init: RequestInit) => new Promise<HttpResponse>((_resolve, reject) => whenCancelled(init, reject));
+    const { client } = clientWith(fetch);
+    const controller = new AbortController();
+
+    const pending = client.request('/v1/me', { signal: controller.signal }).catch((e: unknown) => e);
+    await jest.advanceTimersByTimeAsync(10);
+    controller.abort();
+
+    expect(await pending).toMatchObject({ name: 'AbortError' });
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
