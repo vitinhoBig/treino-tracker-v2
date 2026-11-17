@@ -215,9 +215,18 @@ describe('createChunkedStorage', () => {
   });
 });
 
-// TODO(victor): add a round-trip test with non-ASCII text, like a session whose user name is
-// "João" plus some emoji ('💪'). Pass a small chunkBytes (say 7) to createChunkedStorage so the
-// text spans many chunks, then check that getItem returns exactly what you stored, and that every
-// value in `data` is at most 7 bytes by TextEncoder's count (use the `bytes` helper). To see that it can
-// fail, change `codePointBytes` in chunked-storage.ts to always return 1 (counting characters
-// instead of bytes), run the test, and put it back.
+describe('non-ASCII text', () => {
+  it('round-trips accents and emoji across many tiny chunks', async () => {
+    const { store, data } = fakeStore();
+    const storage = createChunkedStorage(store, { chunkBytes: 7 });
+    const value = JSON.stringify({ user: { name: 'João 💪', note: 'treino de pernas 💪💪' } });
+
+    await storage.setItem(KEY, value);
+
+    expect(await storage.getItem(KEY)).toBe(value);
+    expect(data.size - 1).toBeGreaterThanOrEqual(Math.ceil(bytes(value) / 7));
+    for (const [key, stored] of data) {
+      if (key !== KEY) expect(bytes(stored)).toBeLessThanOrEqual(7);
+    }
+  });
+});
