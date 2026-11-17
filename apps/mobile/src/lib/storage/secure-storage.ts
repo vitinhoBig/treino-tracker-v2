@@ -7,6 +7,6 @@ import { createChunkedStorage } from './chunked-storage';
 
 export const secureStorage = createChunkedStorage(SecureStore);
 
-// TODO(victor): SecureStore's default keychainAccessible is WHEN_UNLOCKED, so the session can't be
-// read while the phone is locked. That is fine while we only refresh in the foreground. If we ever
-// refresh in the background, look at SecureStore.AFTER_FIRST_UNLOCK and what it trades away.
+// WHEN_UNLOCKED allows the session to be read only while the device is unlocked.
+// AFTER_FIRST_UNLOCK also allows access while locked after the first unlock since boot, reducing security.
+// Keep the default for now; reconsider only if the app starts refreshing sessions in the background.
