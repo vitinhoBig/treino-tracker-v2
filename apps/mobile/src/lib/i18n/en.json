@@ -2,5 +2,46 @@
   "hello": {
     "title": "Hello, treino-tracker",
     "today": "Today: {{date}}"
+  },
+  "auth": {
+    "email": "Email",
+    "password": "Password",
+    "signIn": {
+      "title": "Sign in",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "toSignUp": "New here? Create an account"
+    },
+    "signUp": {
+      "title": "Create your account",
+      "submit": "Create account",
+      "submitting": "Creating your account…",
+      "passwordHint": "At least 6 characters.",
+      "toSignIn": "Already have an account? Sign in"
+    },
+    "checkEmail": {
+      "title": "Check your email",
+      "body": "If {{email}} can be used for a new account, we sent a link to confirm it. Open the link, then come back and sign in.",
+      "toSignIn": "Back to sign in"
+    },
+    "errors": {
+      "email_required": "Enter your email.",
+      "password_required": "Enter your password.",
+      "invalid_credentials": "That email and password don't match. Check them and try again.",
+      "email_not_confirmed": "Confirm your email first. The link is in your inbox.",
+      "weak_password": "That password is too weak. Use at least 6 characters.",
+      "account_not_created": "We couldn't create this account. If you already have one, try signing in.",
+      "invalid_email": "That doesn't look like an email address. Check it and try again.",
+      "rate_limited": "Too many attempts. Wait a moment and try again.",
+      "network_error": "We can't reach the server. Check your connection and try again.",
+      "unknown_error": "Something went wrong. Try again."
+    }
+  },
+  "home": {
+    "accountId": "Your account id",
+    "loading": "Loading your account…",
+    "error": "We couldn't load your account.",
+    "retry": "Try again",
+    "signOut": "Sign out"
   }
 }

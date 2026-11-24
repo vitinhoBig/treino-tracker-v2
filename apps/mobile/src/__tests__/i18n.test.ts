@@ -31,6 +31,15 @@ describe('translation files', () => {
     }
   });
 
+  // The voice rule in src/lib/i18n/index.ts: "você", never "tu". This catches the common "tu"
+  // words and verb forms. It can't judge wording, which is for a person to review.
+  it('address the user as "você" in Portuguese, never with "tu" forms', () => {
+    const tuForms = /\b(tu|teu|tua|teus|tuas|contigo|tens|queres|podes|estás|entra|digita|confirma|tenta)\b/i;
+    for (const [key, value] of Object.entries(portuguese)) {
+      expect({ key, tuForm: tuForms.exec(value)?.[0] ?? null }).toEqual({ key, tuForm: null });
+    }
+  });
+
   it('have no empty strings', () => {
     for (const [key, value] of [...Object.entries(english), ...Object.entries(portuguese)]) {
       expect({ key, empty: value.trim() === '' }).toEqual({ key, empty: false });

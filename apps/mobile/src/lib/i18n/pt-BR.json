@@ -2,5 +2,46 @@
   "hello": {
     "title": "Olá, treino-tracker",
     "today": "Hoje: {{date}}"
+  },
+  "auth": {
+    "email": "E-mail",
+    "password": "Senha",
+    "signIn": {
+      "title": "Entrar",
+      "submit": "Entrar",
+      "submitting": "Entrando…",
+      "toSignUp": "Novo por aqui? Crie sua conta"
+    },
+    "signUp": {
+      "title": "Crie sua conta",
+      "submit": "Criar conta",
+      "submitting": "Criando sua conta…",
+      "passwordHint": "Pelo menos 6 caracteres.",
+      "toSignIn": "Já tem uma conta? Entre"
+    },
+    "checkEmail": {
+      "title": "Confira seu e-mail",
+      "body": "Se {{email}} puder ser usado em uma nova conta, enviamos um link para confirmá-la. Abra o link e depois volte para entrar.",
+      "toSignIn": "Voltar para entrar"
+    },
+    "errors": {
+      "email_required": "Digite seu e-mail.",
+      "password_required": "Digite sua senha.",
+      "invalid_credentials": "Esse e-mail e essa senha não conferem. Confira os dados e tente de novo.",
+      "email_not_confirmed": "Confirme seu e-mail primeiro. O link está na sua caixa de entrada.",
+      "weak_password": "Essa senha é muito fraca. Use pelo menos 6 caracteres.",
+      "account_not_created": "Não conseguimos criar essa conta. Se você já tem uma, tente entrar.",
+      "invalid_email": "Isso não parece um endereço de e-mail. Confira e tente de novo.",
+      "rate_limited": "Muitas tentativas. Espere um instante e tente de novo.",
+      "network_error": "Não conseguimos falar com o servidor. Confira sua conexão e tente de novo.",
+      "unknown_error": "Algo deu errado. Tente de novo."
+    }
+  },
+  "home": {
+    "accountId": "O id da sua conta",
+    "loading": "Carregando sua conta…",
+    "error": "Não conseguimos carregar sua conta.",
+    "retry": "Tentar de novo",
+    "signOut": "Sair"
   }
 }

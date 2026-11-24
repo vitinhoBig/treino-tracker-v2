@@ -1,7 +1,7 @@
-import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 
 import { ApiProvider } from '@/lib/api/provider';
+import { RootNavigator } from '@/lib/auth/root-navigator';
 import { SessionProvider } from '@/lib/auth/session';
 import { SplashGate } from '@/lib/auth/splash-gate';
 import '@/lib/i18n';
@@ -16,7 +16,7 @@ export default function RootLayout() {
       <ApiProvider>
         <QueryProvider>
           <SplashGate />
-          <Stack screenOptions={{ headerShown: false }} />
+          <RootNavigator />
         </QueryProvider>
       </ApiProvider>
     </SessionProvider>
