@@ -45,9 +45,14 @@ describe('shouldRetry', () => {
 
     expect(shouldRetry(MAX_RETRIES - 1, error)).toBe(true);
   });
-});
 
-// TODO(victor): add a test that the rule gives up. For an error it normally retries (a 503
-// auth_unavailable and a network_error), shouldRetry(MAX_RETRIES, error) must be false, and so must
-// a count above it. To see it fail, delete the first line of shouldRetry in lib/query/retry.ts: the
-// query would then retry forever while the server stays down.
+  it.each([
+    ['auth_unavailable', 503, 'auth_unavailable'],
+    ['a network error', null, NETWORK_ERROR],
+  ])('gives up at MAX_RETRIES, and after it, for %s', (_name, status, code) => {
+    const error = apiError(status, code);
+
+    expect(shouldRetry(MAX_RETRIES, error)).toBe(false);
+    expect(shouldRetry(MAX_RETRIES + 1, error)).toBe(false);
+  });
+});
