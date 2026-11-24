@@ -4,12 +4,25 @@ import { ApiError, errorFromBody, NETWORK_ERROR, TIMEOUT, UNEXPECTED_RESPONSE } 
 export type HttpResponse = { ok: boolean; status: number; text(): Promise<string> };
 export type HttpFetch = (url: string, init: RequestInit) => Promise<HttpResponse>;
 
+/**
+ * How a refresh ended. Three cases, because two of the failures need opposite reactions:
+ * - `refreshed`: a new access token, retry the request with it
+ * - `refused`: Supabase answered and said no (the refresh token is invalid, revoked or already
+ *   used), so this device's session is dead and the user must sign in again
+ * - `unavailable`: Supabase could not be reached or could not answer (offline, a server error).
+ *   The refresh token is still good, so the session stays and the request fails to be tried later
+ */
+export type RefreshResult =
+  | { status: 'refreshed'; accessToken: string }
+  | { status: 'refused' }
+  | { status: 'unavailable' };
+
 export type ApiClientDependencies = {
   baseUrl: string;
   /** The current access token, or null when nobody is signed in. */
   getAccessToken: () => Promise<string | null>;
-  /** Refreshes the session and returns the new access token, or null if that failed. */
-  refreshSession: () => Promise<string | null>;
+  /** Refreshes the session. It reports failure as a result, not by throwing: see RefreshResult. */
+  refreshSession: () => Promise<RefreshResult>;
   /** Signs out on this device only. The token is bad, so there's no point telling the server. */
   signOut: () => Promise<void>;
   fetch?: HttpFetch;
@@ -43,7 +56,9 @@ const defaultSleep = (milliseconds: number) =>
  * Calls our FastAPI service with the user's access token and handles the auth error codes from
  * docs/API_AUTH.md:
  *
- * - `token_expired`: refresh the session once, retry once, and sign out if either fails
+ * - `token_expired`: refresh the session once and retry once. Sign out if the refresh is refused
+ *   or the retry is expired again. If the refresh could not reach Supabase, fail with
+ *   `network_error` and keep the session
  * - `invalid_token` and `missing_token`: sign out, no retry
  * - `auth_unavailable`: retry a few times with growing waits, and never sign out
  * - anything else, including `anonymous_user`: throw it for the screen to show
@@ -71,13 +86,14 @@ export function createApiClient(dependencies: ApiClientDependencies): ApiClient 
   // Several requests can find the token expired at the same moment. They share one refresh, because
   // a refresh token can be used once: a second refresh with the same one would fail and sign the
   // user out for no reason.
-  let refreshInFlight: Promise<string | null> | null = null;
-  function refreshOnce(): Promise<string | null> {
-    refreshInFlight ??= refreshSession()
-      .catch(() => null)
-      .finally(() => {
-        refreshInFlight = null;
-      });
+  //
+  // If refreshSession throws, that is a bug in it and not a verdict on the session, so the error
+  // passes through to the caller unchanged: nobody is signed out for it.
+  let refreshInFlight: Promise<RefreshResult> | null = null;
+  function refreshOnce(): Promise<RefreshResult> {
+    refreshInFlight ??= refreshSession().finally(() => {
+      refreshInFlight = null;
+    });
     return refreshInFlight;
   }
 
@@ -154,14 +170,23 @@ export function createApiClient(dependencies: ApiClientDependencies): ApiClient 
       const error = errorFromBody(reply.status, reply.text);
       switch (error.code) {
         case 'token_expired': {
-          const fresh = refreshed ? null : await refreshOnce();
-          refreshed = true;
-          if (!fresh) {
+          // Already refreshed once for this request and still expired: refreshing again won't help.
+          if (refreshed) {
             await signOut();
             throw error;
           }
-          token = fresh;
-          continue;
+          refreshed = true;
+          const result = await refreshOnce();
+          if (result.status === 'refreshed') {
+            token = result.accessToken;
+            continue;
+          }
+          if (result.status === 'unavailable') {
+            // The refresh token is still good, so the session stays. The caller can try again.
+            throw new ApiError(null, NETWORK_ERROR, 'Could not refresh the session: Supabase was unreachable.');
+          }
+          await signOut();
+          throw error;
         }
         case 'invalid_token':
         case 'missing_token':

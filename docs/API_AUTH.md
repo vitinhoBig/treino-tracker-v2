@@ -68,11 +68,28 @@ Both are HTTP 401, and the error `code` tells the client what to do next:
 
 | Code | Meaning | What the app should do |
 |---|---|---|
-| `token_expired` | A genuine token that has simply run out. Normal: access tokens last an hour. | Refresh the session with the refresh token, then retry the request **once**. Sign the user out only if the refresh fails. |
+| `token_expired` | A genuine token that has simply run out. Normal: access tokens last an hour. | Refresh the session with the refresh token, then retry the request **once**. Sign the user out only if Supabase **refuses** the refresh. If Supabase can't be reached, keep the session and fail with `network_error` (see below). |
 | `invalid_token` | Malformed, wrongly signed, wrong audience/issuer, not valid yet, or from an unknown key. Retrying cannot help. | Do not retry. Clear the local session and send the user to sign in. |
 | `missing_token` | No `Authorization: Bearer` header. | A client bug if the user is signed in. Otherwise send the user to sign in. |
 | `anonymous_user` (403) | Signed in anonymously, which this app doesn't support. | Show a message and offer sign-up or sign-in. |
 | `auth_unavailable` (503) | The API can't reach Supabase's signing keys and has no usable cached copy. Not the user's fault. | Keep the session, show "try again", and retry with backoff. Never sign the user out for this. |
+
+### When the refresh fails
+
+A refresh can fail in two ways that need opposite reactions, so the app's refresh reports one of three results:
+
+| Result | What happened | What the app does |
+|---|---|---|
+| `refreshed` | Supabase issued a new access token. | Retry the request once with it. |
+| `refused` | Supabase answered "no": the refresh token is invalid, revoked or already used, or there is no session. | The session is dead. Sign out on this device, and throw the `token_expired` error. |
+| `unavailable` | Supabase could not be reached or could not answer: offline, or a 5xx. | **Keep the session.** The refresh token is untouched and still good. Fail the request with the client's own `network_error` (no HTTP status), and let the caller try again later. Never sign out. |
+
+The split follows supabase-js itself, which keeps the stored session after a retryable fetch error (offline, a 5xx) and
+drops it after any other refresh error. A refresh that only could not reach Supabase must not log someone out on a bad
+connection. If the refresh code itself crashes, the error is passed on as is and nobody is signed out.
+
+The same rule applies when the app reads its access token and the library has to refresh it first: no answer from
+Supabase is a `network_error`, not "signed out".
 
 The two 401s are kept apart so that a token that merely aged out doesn't log people out. The `WWW-Authenticate`
 header is set as well, per RFC 6750. The app doesn't exist yet, so this table is the contract the Expo client will be

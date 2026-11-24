@@ -1,4 +1,4 @@
-import { createApiClient, type HttpResponse } from '@/lib/api/client';
+import { createApiClient, type HttpResponse, type RefreshResult } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 
 const TOKEN = 'header.payload.old-signature';
@@ -12,7 +12,9 @@ const apiError = (status: number, code: string, message = code): Reply =>
   json(status, { error: { code, message } });
 
 /** A fake server that answers with the given replies in order, and records every request. */
-function setup(replies: Reply[], { token = TOKEN as string | null, fresh = FRESH as string | null } = {}) {
+const REFRESHED: RefreshResult = { status: 'refreshed', accessToken: FRESH };
+
+function setup(replies: Reply[], { token = TOKEN as string | null, refresh = REFRESHED } = {}) {
   const calls: { url: string; init: RequestInit }[] = [];
   const fetch = jest.fn(async (url: string, init: RequestInit): Promise<HttpResponse> => {
     calls.push({ url, init });
@@ -24,7 +26,7 @@ function setup(replies: Reply[], { token = TOKEN as string | null, fresh = FRESH
   });
   const deps = {
     getAccessToken: jest.fn(async () => token),
-    refreshSession: jest.fn(async () => fresh),
+    refreshSession: jest.fn(async (): Promise<RefreshResult> => refresh),
     signOut: jest.fn(async () => {}),
     sleep: jest.fn(async (_ms: number) => {}),
   };
@@ -115,20 +117,50 @@ describe('token_expired', () => {
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
-  it('signs out when the refresh fails', async () => {
-    const { client, fetch, signOut } = setup([apiError(401, 'token_expired')], { fresh: null });
+  it('signs out when Supabase refuses the refresh, because the session is dead', async () => {
+    const { client, fetch, signOut } = setup([apiError(401, 'token_expired')], { refresh: { status: 'refused' } });
 
     expect((await failure(client.request('/v1/me'))).code).toBe('token_expired');
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
-  it('signs out when the refresh throws', async () => {
-    const { client, refreshSession, signOut } = setup([apiError(401, 'token_expired')]);
-    refreshSession.mockRejectedValueOnce(new Error('refresh endpoint down'));
+  // The refresh token is still good when Supabase just could not be reached, so the user stays signed in.
+  it('keeps the session and fails with network_error when Supabase could not be reached', async () => {
+    const { client, fetch, refreshSession, signOut } = setup([apiError(401, 'token_expired')], {
+      refresh: { status: 'unavailable' },
+    });
 
-    expect((await failure(client.request('/v1/me'))).code).toBe('token_expired');
-    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(await failure(client.request('/v1/me'))).toMatchObject({ status: null, code: 'network_error' });
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(1); // no retry with the old token
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('refreshes again on the next request after Supabase could not be reached', async () => {
+    const { client, refreshSession, signOut, authOf } = setup([
+      apiError(401, 'token_expired'),
+      apiError(401, 'token_expired'),
+      json(200, USER),
+    ]);
+    refreshSession.mockResolvedValueOnce({ status: 'unavailable' });
+
+    await failure(client.request('/v1/me'));
+    await expect(client.request('/v1/me')).resolves.toEqual(USER);
+
+    expect(refreshSession).toHaveBeenCalledTimes(2);
+    expect(authOf(2)).toBe(`Bearer ${FRESH}`);
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  // A crash inside refreshSession says nothing about the session, so nobody is signed out for it.
+  it('passes a crash in the refresh through, without signing out', async () => {
+    const { client, refreshSession, signOut } = setup([apiError(401, 'token_expired')]);
+    const crash = new Error('refresh endpoint down');
+    refreshSession.mockRejectedValueOnce(crash);
+
+    await expect(client.request('/v1/me')).rejects.toBe(crash);
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it('signs out when the retried request has an invalid token', async () => {
@@ -310,7 +342,7 @@ describe('timeout', () => {
       baseUrl: 'http://api.test',
       fetch,
       getAccessToken: async () => TOKEN,
-      refreshSession: async () => FRESH,
+      refreshSession: async (): Promise<RefreshResult> => REFRESHED,
       signOut,
       timeoutMs: TIMEOUT_MS,
     });

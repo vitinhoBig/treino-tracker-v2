@@ -8,6 +8,7 @@ import type { AuthChangeEvent, AuthError, Session } from '@supabase/supabase-js'
 import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { createContext, use, useEffect, useMemo, useState, type ReactNode } from 'react';
 
+import type { RefreshResult } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { getSupabase } from '@/lib/supabase';
 
@@ -47,12 +48,17 @@ export type SessionValue = {
    * in, so that must not look like "signed out".
    */
   getAccessToken(): Promise<string | null>;
-  /** Refreshes the session and returns the new access token, or null if Supabase refused. */
-  refreshSession(): Promise<string | null>;
+  /** Refreshes the session. Tells a refusal (sign out) from Supabase being out of reach (don't). */
+  refreshSession(): Promise<RefreshResult>;
 };
 
 export const NETWORK_ERROR = 'network_error';
 export const UNKNOWN_ERROR = 'unknown_error';
+
+// Whether Supabase could not answer, as opposed to answering "no". This is the library's own line:
+// it keeps the stored session after a retryable fetch error (offline, a 5xx) and drops it after any
+// other refresh error, so the app agrees with what the library already did to the session.
+const couldNotAnswer = (error: AuthError) => isAuthRetryableFetchError(error);
 
 function failure(error: AuthError): { ok: false; code: string } {
   // A retryable fetch error means the request never got an answer: offline, or the server is down.
@@ -120,14 +126,16 @@ export function SessionProvider({ children, auth, appState }: Props) {
         if (data.session) return data.session.access_token;
         // No session plus an error means the token had run out and refreshing it failed. When the
         // failure was only reaching Supabase, the session is still stored and still good.
-        if (error && isAuthRetryableFetchError(error)) {
+        if (error && couldNotAnswer(error)) {
           throw new ApiError(null, NETWORK_ERROR, 'Could not refresh the session: Supabase was unreachable.');
         }
         return null;
       },
       async refreshSession() {
         const { data, error } = await getAuth().refreshSession();
-        return error ? null : (data.session?.access_token ?? null);
+        if (error) return couldNotAnswer(error) ? { status: 'unavailable' } : { status: 'refused' };
+        // A refresh that succeeds without a session has nothing to use, which is as good as refused.
+        return data.session ? { status: 'refreshed', accessToken: data.session.access_token } : { status: 'refused' };
       },
     }),
     [getAuth],

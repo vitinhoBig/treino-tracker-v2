@@ -1,5 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
-import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
+import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError } from '@supabase/supabase-js';
 import { render, screen } from '@testing-library/react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { Text } from 'react-native';
@@ -216,18 +216,39 @@ describe('SessionProvider tokens for the API client', () => {
     });
     const { latest } = await renderProvider(auth);
 
-    await expect(latest.value!.refreshSession()).resolves.toBe('a3');
+    await expect(latest.value!.refreshSession()).resolves.toEqual({ status: 'refreshed', accessToken: 'a3' });
   });
 
-  it('gives null when the refresh fails, whatever the reason', async () => {
+  it.each([
+    ['an invalid refresh token', new AuthApiError('Invalid Refresh Token', 400, 'refresh_token_not_found')],
+    ['one that was already used', new AuthApiError('Already Used', 400, 'refresh_token_already_used')],
+    ['a session that no longer exists', new AuthSessionMissingError()],
+  ])('reports %s as refused, which ends the session', async (_name, error) => {
     const { auth } = fakeAuth();
-    auth.refreshSession.mockResolvedValueOnce({
-      data: { session: null },
-      error: new AuthApiError('Invalid Refresh Token', 400, 'refresh_token_already_used'),
-    });
+    auth.refreshSession.mockResolvedValueOnce({ data: { session: null }, error });
     const { latest } = await renderProvider(auth);
 
-    await expect(latest.value!.refreshSession()).resolves.toBeNull();
+    await expect(latest.value!.refreshSession()).resolves.toEqual({ status: 'refused' });
+  });
+
+  // Offline, or a server error: the refresh token is untouched, so the user must stay signed in.
+  it.each([
+    ['no network', new AuthRetryableFetchError('Failed to fetch', 0)],
+    ['a server error', new AuthRetryableFetchError('Bad Gateway', 502)],
+  ])('reports %s as unavailable, which keeps the session', async (_name, error) => {
+    const { auth } = fakeAuth();
+    auth.refreshSession.mockResolvedValueOnce({ data: { session: null }, error });
+    const { latest } = await renderProvider(auth);
+
+    await expect(latest.value!.refreshSession()).resolves.toEqual({ status: 'unavailable' });
+  });
+
+  it('reports a refresh that gave no session as refused', async () => {
+    const { auth } = fakeAuth();
+    auth.refreshSession.mockResolvedValueOnce({ data: { session: null }, error: null });
+    const { latest } = await renderProvider(auth);
+
+    await expect(latest.value!.refreshSession()).resolves.toEqual({ status: 'refused' });
   });
 
   // The API client is built from these, so a new function on every auth event would rebuild it.

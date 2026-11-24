@@ -37,6 +37,17 @@ Success responses are plain data, with no envelope.
 
 The auth codes are explained in [API_AUTH.md](API_AUTH.md#token_expired-vs-invalid_token).
 
+### Codes the app adds itself
+
+The server never sends these. The mobile API client raises them when no usable answer arrived, with no HTTP status
+(`status` is `null`, except `unexpected_response`, which keeps the status it saw):
+
+| `code` | When | Retried by the query layer |
+|---|---|---|
+| `network_error` | The request got no answer, or the session could not be refreshed because Supabase was out of reach | yes |
+| `timeout` | No complete answer within the client's time limit (15 seconds by default) | yes |
+| `unexpected_response` | An answer that isn't in the format above, such as an HTML error page from a proxy | only with a 5xx status |
+
 ## Examples
 
 A missing token (401, with `WWW-Authenticate: Bearer`):
