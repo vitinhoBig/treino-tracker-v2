@@ -75,6 +75,18 @@ roughly one conventional commit or a small series of them, and each module gets 
 - A missing `SUPABASE_URL` only fails on the first protected request. It should fail at startup (deploy work).
 - Nothing checks that the error-code table in `docs/API_ERRORS.md` matches the codes in the API. A test should.
 - Deleting an account must also remove stored files, which database cascades don't reach. See the account deletion item.
+- A cold-start deep link to an `(app)` route is lost: while the stored session loads the guard counts the user as signed
+  out and redirects, and nothing restores the link once the session arrives. Only `/` exists today, so nothing breaks yet.
+- No dark mode: screens use fixed light colors, so a phone in dark mode still shows white screens.
+- The home screen's **Try again** shows one message for every error, so being offline looks the same as being refused
+  (the screen doesn't read the error code yet).
+- `query-provider.test.tsx` keeps its own copy of the provider setup that `src/test-support/app-providers.tsx` now
+  provides, so the two can drift apart.
+- `query-provider.test.tsx` sometimes prints a "not wrapped in act(...)" warning, which means a state update lands
+  after a test step finished. Harmless today, but it can hide a real one.
+- A 429 (rate limit) on a token refresh counts as "refused" and signs the user out, because supabase-js drops the
+  session for every refresh error except network and 5xx ones and the app follows it. To be covered by the security
+  review.
 
 **Exit check:** Victor logs a real gym session on a phone, including a stretch in airplane mode. A PR appears, an
 invited viewer sees the correct feed line, and revoking access removes it. Charts show the 16 imported weeks.
