@@ -3,10 +3,13 @@
 Cross-platform fitness app for strength training, sports and nutrition. It grows out of a Python CLI that tracked 16
 weeks of real training.
 
-**Current state: MVP in progress, backend foundations only.** The database (schema, RLS, PR detection, viewer masking)
-and the API skeleton (error format, token verification, `/v1/me`) are built and tested. The mobile app is still a
-hello-world screen, and no user-facing features exist yet. Folders in the map below that are not on disk yet arrive
-with their features. See [docs/ROADMAP.md](docs/ROADMAP.md) for what is done.
+**Current state: MVP in progress, foundations done.** The database (schema, RLS, PR detection, viewer masking) and the
+API skeleton (error format, token verification, `/v1/me`) are built and tested. The mobile app has sign-up, sign-in and
+sign-out behind a route guard, a session kept in secure storage, the query layer with its retry rule, and a home screen
+that shows the account ID from `/v1/me`, in English and Brazilian Portuguese. It has automated tests but has not yet
+been checked on a phone ([docs/MOBILE.md](docs/MOBILE.md) has the checklist). No training features exist yet. Folders
+in the map below that are not on disk yet arrive with their features. See [docs/ROADMAP.md](docs/ROADMAP.md) for what
+is done.
 
 ## Read before changing things
 
@@ -16,6 +19,7 @@ with their features. See [docs/ROADMAP.md](docs/ROADMAP.md) for what is done.
 - [docs/ROADMAP.md](docs/ROADMAP.md): delivery checklists
 - [docs/API_AUTH.md](docs/API_AUTH.md): how the API verifies Supabase tokens, and what the app does on each auth error
 - [docs/API_ERRORS.md](docs/API_ERRORS.md): the one error shape, and every error code
+- [docs/MOBILE.md](docs/MOBILE.md): running the app on a phone against local services, and the phone checklist
 
 ## How to work with Victor
 
@@ -46,7 +50,18 @@ mobile.
 ```text
 apps/mobile/
   src/app/              Routes. Every file here becomes a page, so tests must not go here
+    (auth)/             Signed-out screens: sign-in, sign-up
+    (app)/              Signed-in screens: home, and every feature after it
+  src/components/       Shared UI building blocks, such as the form fields and buttons
+  src/lib/auth/         Session provider, route guard, auto-refresh, auth error messages
+  src/lib/api/          Our API's client, its error codes, its provider and hooks such as useMe
+  src/lib/query/        TanStack Query client, the retry rule and the app-state focus binding
+  src/lib/storage/      Secure session storage, split into chunks (a web variant is not secure)
+  src/lib/i18n/         Translations (en, pt-BR) and the voice rule for Portuguese
+  src/lib/config.ts     Reads and checks EXPO_PUBLIC_ variables
+  src/lib/supabase.ts   The one Supabase client, made on first use
   src/__tests__/        Client tests
+  src/test-support/     Fakes and render helpers shared by tests. Outside __tests__, so Jest doesn't run them
 services/api/
   app/routers/          HTTP only
   app/services/         Orchestration
