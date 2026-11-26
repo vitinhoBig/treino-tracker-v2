@@ -92,6 +92,7 @@ npm --prefix apps/mobile test                        # Client
 # Lint and types
 uv --directory services/api run ruff check .
 npm --prefix apps/mobile run lint
+(cd apps/mobile && npx expo customize tsconfig.json)  # Route types without the dev server, as CI does
 npm --prefix apps/mobile run typecheck
 
 # Database

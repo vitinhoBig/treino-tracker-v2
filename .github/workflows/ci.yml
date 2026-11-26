@@ -58,6 +58,10 @@ jobs:
           cache-dependency-path: apps/mobile/package-lock.json
       # npm ci installs exactly what package-lock.json says, and fails if it disagrees with package.json.
       - run: npm ci
+      # Generates the typed-route types (.expo/types) and expo-env.d.ts, which are gitignored and normally
+      # made by `expo start`. Without them typecheck accepts any Link href, so CI would be looser than a
+      # developer's machine. This is the command Expo's typed-routes docs give for CI.
+      - run: npx expo customize tsconfig.json
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
