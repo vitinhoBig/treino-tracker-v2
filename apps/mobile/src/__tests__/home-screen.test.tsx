@@ -76,7 +76,7 @@ describe('the home screen', () => {
 
     expect(await screen.findByText('Olá, treino-tracker')).toBeTruthy();
     expect(screen.getByText(/Hoje: \d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}/)).toBeTruthy();
-    expect(await screen.findByText('O id da sua conta: alice')).toBeTruthy();
+    expect(await screen.findByText('O ID da sua conta: alice')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sair' })).toBeTruthy();
   });
 });

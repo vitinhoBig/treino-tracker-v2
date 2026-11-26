@@ -38,7 +38,7 @@
     }
   },
   "home": {
-    "accountId": "O id da sua conta",
+    "accountId": "O ID da sua conta",
     "loading": "Carregando sua conta…",
     "error": "Não conseguimos carregar sua conta.",
     "retry": "Tentar de novo",
