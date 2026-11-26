@@ -1,5 +1,5 @@
 import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
-import { screen, userEvent } from '@testing-library/react-native';
+import { fireEvent, screen, userEvent } from '@testing-library/react-native';
 import { act } from 'expo-router/testing-library';
 
 import i18n from '@/lib/i18n';
@@ -173,15 +173,13 @@ describe('the sign-in form', () => {
     );
     expect(screen.getByText('Novo por aqui? Crie sua conta')).toBeTruthy();
   });
-});
 
-// TODO(victor): two small things for the sign-in and sign-up work.
-// 1. Review the pt-BR wording in src/lib/i18n/pt-BR.json (the "auth" and "home" blocks). The voice rule
-//    is in src/lib/i18n/index.ts: "você", friendly, imperative buttons, calm errors. I am least sure of
-//    "Novo por aqui? Crie sua conta", "Confira os dados e tente de novo", and whether "id" should be
-//    "identificador". Change any string you would not say, and keep the {{placeholders}}.
-// 2. Add a test that pressing Enter on the password field signs in, like the button does. Open the
-//    screen with openSignIn(), type both fields, then `await fireEvent(screen.getByLabelText('Password'),
-//    'submitEditing')` (import fireEvent from '@testing-library/react-native') and expect
-//    auth.signInWithPassword to have been called with the email and password. To see it fail, delete the
-//    `onSubmitEditing={form.submit}` line from src/app/(auth)/sign-in.tsx.
+  it('signs in when Enter is pressed on the password field, like the button does', async () => {
+    const { auth, user } = await openSignIn();
+    await fillIn(user, 'ana@example.com', 'secret1');
+
+    await fireEvent(screen.getByLabelText('Password'), 'submitEditing');
+
+    expect(auth.signInWithPassword).toHaveBeenCalledWith({ email: 'ana@example.com', password: 'secret1' });
+  });
+});
